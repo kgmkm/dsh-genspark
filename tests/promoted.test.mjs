@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { PROMOTED_CATEGORIES, PROMOTED_TOOLS, buildPromotedTools, describeSavedFile, detectFileFormat, promotedSummary, resolvePromotedCategories } from '../lib/promoted.js';
+import { PROMOTED_CATEGORIES, PROMOTED_TOOLS, buildPromotedTools, describeSavedFile, detectFileFormat, promotedSummary, resolvePromotedCategories, visionKindOf } from '../lib/promoted.js';
 
 /** defineTool を素通しさせて定義オブジェクトを集める。 */
 function collect({ categories, runResult, calls, log } = {}) {
@@ -322,6 +322,36 @@ test('vision: URL でないローカルパスで存在しないものはエラ�
   const tools = collect({ categories: ['media'] });
   const vision = tools.find((tool) => tool.name === 'genspark_vision');
   assert.match(await vision.execute({ media: 'これはテストです' }, EXEC), /http\(s\) で始まる URL/);
+});
+
+test('vision: media_list（コマンドの添付）は種類ごとに振り分ける', () => {
+  const spec = PROMOTED_TOOLS.find((tool) => tool.name === 'genspark_vision');
+  const images = spec.build({ media_list: ['https://example.com/a.png', 'https://example.com/b.jpg'], instruction: '比較して' });
+  assert.equal(images.gsk, 'understand_images');
+  assert.deepEqual(images.args, {
+    image_urls: ['https://example.com/a.png', 'https://example.com/b.jpg'],
+    instruction: '比較して',
+  });
+
+  const video = spec.build({ media_list: ['https://example.com/clip.mp4'], instruction: '何が映っている？' });
+  assert.equal(video.gsk, 'analyze_media');
+  assert.deepEqual(video.args, { media_urls: ['https://example.com/clip.mp4'], requirements: '何が映っている？' });
+
+  const audio = spec.build({ media_list: ['https://example.com/voice.mp3'] });
+  assert.equal(audio.gsk, 'audio_transcribe');
+  assert.deepEqual(audio.args, { audio_urls: ['https://example.com/voice.mp3'] });
+
+  // 画像が混ざっていれば画像として扱う（1 回の呼び出しで済ませる）
+  const mixed = spec.build({ media_list: ['https://example.com/clip.mp4', 'https://example.com/a.png'] });
+  assert.equal(mixed.gsk, 'understand_images');
+  assert.deepEqual(mixed.args.image_urls, ['https://example.com/a.png']);
+});
+
+test('visionKindOf: 拡張子で分類する（クエリ付き URL も可）', () => {
+  assert.equal(visionKindOf('https://example.com/a.JPG'), 'image');
+  assert.equal(visionKindOf('https://example.com/v.mp4?token=abc'), 'video');
+  assert.equal(visionKindOf('https://example.com/a.m4a#t=1'), 'audio');
+  assert.equal(visionKindOf('C:\\tmp\\noext'), 'image');
 });
 
 test('extra は型付き引数を上書きしない（型付きが優先）', async () => {

@@ -164,6 +164,8 @@ export function apply(ctx, config) {
           getConfig,
           runner,
           catalog,
+          // 添付（invocation.attachments）をホストパスへ解決するために ctx を渡す（attachments は任意依存）
+          ctx: inner,
           log: (message) => {
             try {
               inner.logger?.debug?.(message);

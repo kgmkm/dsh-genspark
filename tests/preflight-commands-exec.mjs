@@ -10,6 +10,8 @@
 // 前提  : reference/asar/node_modules/@deepseek-ai/{cordis,dsh-commands}（抽出済み）
 
 import { fileURLToPath } from 'node:url';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -50,8 +52,8 @@ const FAKE_TOOLS = [
   },
 ];
 
-/** 記録用のスタブ runner / catalog を載せた実行環境を作る。 */
-async function makeRuntime({ runTool, tools = FAKE_TOOLS } = {}) {
+/** 記録用のスタブ runner / catalog を載えた実行環境を作る。 */
+async function makeRuntime({ runTool, tools = FAKE_TOOLS, attachments, cwd } = {}) {
   const calls = [];
   const envelope = (data) => ({ status: 'ok', message: 'success', data });
   const stubRunner = {
@@ -76,15 +78,24 @@ async function makeRuntime({ runTool, tools = FAKE_TOOLS } = {}) {
   };
 
   const config = { promotedCategories: ['search', 'media'], timeoutMs: 300000, maxChars: 4000, debug: false };
-  const definitions = buildGensparkCommands({ getConfig: () => config, runner: stubRunner, catalog: stubCatalog, log });
 
   const app = new cordis.Context();
   const fiber = app.plugin(commandsModule.default ?? commandsModule.CommandRuntime);
   await settle();
+  // 添付を受け取る経路を検証するときだけ、ホストの attachments サービス相当を載せる
+  if (attachments !== undefined) app.provide('attachments', attachments);
+  const definitions = buildGensparkCommands({ getConfig: () => config, runner: stubRunner, catalog: stubCatalog, log, ctx: app });
   for (const definition of definitions) app.commands.register(definition);
 
   const appends = [];
-  const agent = { session: { append(type, data) { appends.push({ type, data }); } } };
+  const agent = {
+    session: {
+      header: { cwd: cwd ?? process.cwd() },
+      append(type, data) {
+        appends.push({ type, data });
+      },
+    },
+  };
   const ranTools = () => calls.filter((call) => call.kind === 'runTool');
   return { app, fiber, service: app.commands, definitions, calls, ranTools, appends, agent };
 }
@@ -163,6 +174,80 @@ check(
 const followText = followups[0]?.content?.[0]?.text ?? '';
 check('followup の本文に見出しと結果が入る', followText.includes('Genspark のコマンド実行結果です（/genspark-search 東京）') && followText.includes('状態: 成功'), followText.slice(0, 70));
 check('followup は結果本文（コマンド欄と同じ内容）を含む', followText.length > followSearch.result.text.length, `${followText.length} 文字`);
+
+// --- 5.6 添付ファイル: 実ディスパッチャの受付 → handler のローカルパス解決 ----------
+// ホストは `input.attachments === true` を宣言したコマンドにだけ `invocation.attachments` を渡す。
+// 宣言漏れがあると、ユーザーには「添付ファイルを受け付けません」トーストが出る（今回の不具合）。
+const IMAGE_BASE64 = Buffer.from('fake-image-bytes').toString('base64');
+// 実ストア（dsh-attachment-local）の imageHostPath は `<root>/objects/xx/<sha256>` を返す＝拡張子なし。
+// ここでも同じ形にして、コマンド側が拡張子付きへ複製できることを確かめる。
+const attachRoot = mkdtempSync(join(tmpdir(), 'genspark-attach-store-'));
+const imageObjectPath = join(attachRoot, 'objects', 'ab', 'ab'.padEnd(64, 'c'));
+mkdirSync(dirname(imageObjectPath), { recursive: true });
+writeFileSync(imageObjectPath, 'fake-image-bytes');
+const attachmentStore = {
+  async saveImages(inputs) {
+    return inputs.map((input, index) => ({
+      attachmentId: `sha256:img${index}`,
+      mediaType: input.mediaType,
+      ...(input.name === undefined ? {} : { name: input.name }),
+    }));
+  },
+  imageHostPath: () => imageObjectPath,
+};
+const attachEnv = await makeRuntime({ attachments: attachmentStore, cwd: attachRoot });
+const imageAttachment = { type: 'image', mediaType: 'image/png', data: IMAGE_BASE64, name: 'cat.png' };
+
+attachEnv.calls.length = 0;
+const refused = await attachEnv.service.execute(attachEnv.agent, line('genspark-search', '東京'), [imageAttachment], signal());
+check(
+  '添付を宣言していないコマンドはホストが受付段階で拒否',
+  refused?.result?.kind === 'error' && /does not accept attachments/.test(refused.result.text),
+  refused?.result?.text?.slice(0, 60),
+);
+check('拒否時は CLI を起動しない', attachEnv.calls.length === 0, `runner 呼び出し ${attachEnv.calls.length} 件`);
+
+attachEnv.calls.length = 0;
+const visionWithImage = await attachEnv.service.execute(attachEnv.agent, line('genspark-vision'), [imageAttachment], signal());
+const attachRun = attachEnv.ranTools()[0];
+check(
+  '添付を宣言したコマンドは添付付きで実行できる',
+  visionWithImage?.result?.kind === 'success',
+  visionWithImage?.result?.text?.split('\n')[0]?.slice(0, 60),
+);
+check(
+  '添付はホストパスへ解決され、拡張子付きに複製して understand_images へ渡る',
+  attachRun?.toolName === 'understand_images' &&
+    /\.png$/.test(String(attachRun?.toolArgs?.image_urls?.[0] ?? '')) &&
+    existsSync(String(attachRun?.toolArgs?.image_urls?.[0] ?? '')),
+  JSON.stringify(attachRun?.toolArgs),
+);
+
+attachEnv.calls.length = 0;
+const visionWithFile = await attachEnv.service.execute(
+  attachEnv.agent,
+  line('genspark-vision'),
+  [{ type: 'file', receiptId: 'rcpt-unknown' }],
+  signal(),
+);
+check(
+  'ファイル添付は受付済み（未登録の receipt はホストが日本語で説明）',
+  visionWithFile?.result?.kind === 'error' && /File upload receipt is unknown/.test(visionWithFile.result.text),
+  visionWithFile?.result?.text?.slice(0, 60),
+);
+attachEnv.fiber.dispose();
+await settle();
+
+// 添付サービスが無いプロファイルでは、宣言していてもホストが理由を返す
+const noStoreEnv = await makeRuntime({});
+const noStore = await noStoreEnv.service.execute(noStoreEnv.agent, line('genspark-vision'), [imageAttachment], signal());
+check(
+  'attachments サービスが無ければホストが理由を返す',
+  noStore?.result?.kind === 'error' && /no attachment store is composed/.test(noStore.result.text),
+  noStore?.result?.text?.slice(0, 70),
+);
+noStoreEnv.fiber.dispose();
+await settle();
 
 // --- 6. 13 コマンドすべてがディスパッチャに解決される -------------------------------
 const unresolved = [];

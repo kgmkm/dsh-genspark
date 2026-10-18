@@ -88,14 +88,25 @@ DeepSeek Harness（DSH）から **Genspark** の各種機能を使えるよう�
 | `/genspark-run` | 任意ツールの実行（読み取り専用。対話必須・要確認は事前拒否） | `ツール名 [JSON引数]` |
 | `/genspark-search` | Web 検索 | 検索クエリ |
 | `/genspark-image-search` | 画像検索 | 検索語 |
-| `/genspark-crawl` | ページ本文の取得 | URL |
+| `/genspark-crawl` | ページ本文の取得（**添付ファイル可**） | URL |
 | `/genspark-scholar` | 学術論文検索 | クエリ |
 | `/genspark-maps` | 地図・場所検索（`search`/`maps` 固定） | 検索語 |
-| `/genspark-summarize` | 長い文書の要約 | `URL [質問]`（質問は省略可） |
-| `/genspark-image` | 画像生成 → `genspark-out/` へ保存 | 生成したい画像の説明 |
-| `/genspark-video` | 動画生成（既定 `kling/v3`）→ 保存 | 生成したい動画の説明 |
+| `/genspark-summarize` | 長い文書の要約（**添付ファイル可**） | `URL [質問]`（質問は省略可） |
+| `/genspark-image` | 画像生成 → `genspark-out/` へ保存（**添付画像は参照画像**） | 生成したい画像の説明 |
+| `/genspark-video` | 動画生成（既定 `kling/v3`）→ 保存（**添付画像は先頭フレーム**） | 生成したい動画の説明 |
 | `/genspark-audio` | 音声・音楽生成 → 保存 | 読み上げ原稿 or 生成内容 |
-| `/genspark-vision` | メディア理解（画像・動画・音声を既定の汎用モデルで説明） | `<パス or URL> [指示]` |
+| `/genspark-vision` | メディア理解（画像・動画・音声を既定の汎用モデルで説明。**添付ファイル可**） | `<パス or URL> [指示]` |
+
+- **添付ファイル（コンポーザの画像・ファイル）に対応しています**（`/genspark-vision`・`/genspark-summarize`・
+  `/genspark-crawl`・`/genspark-image`・`/genspark-video`）。添付を付けてコマンドを送ると、入力欄の文字は
+  「指示・質問」として扱われ、対象は添付ファイルになります（例: 画像を添付して `/genspark-vision 猫を数えて`）。
+  ホストは `input.attachments = true` を宣言したコマンドにだけ添付を渡すため、未宣言だと送信時に
+  「添付ファイルを受け付けません」で拒否されます（実機で発生した不具合。`lib/commands.js` で宣言）。
+  添付は `invocation.attachments`（`ImageBlock` / `FileBlock`）として届き、プラグインが
+  `ctx.get('attachments')` の `imageHostPath` / `fileHostPath` でホスト上の実パスへ解決して gsk に渡します。
+  実ストアの画像パスは拡張子を持たない（`<root>/objects/xx/<sha256>`）ため、その場合だけ
+  `<cwd>/genspark-out/attachments/<sha>-<n>.<mediaType 由来の拡張子>` へ複製します（gsk は拡張子で種別を判断）。
+  パスも実体も取れないバックエンドでは、日本語で「パスを文字で入力してください」と案内します。
 
 - 検索系の結果は**人間向けに整形**して表示します（`organic_results: 10 件（先頭 5 件を表示）` の形式。
   一覧として解釈できない応答は JSON をそのまま表示）。
@@ -243,3 +254,13 @@ const removable = installed && !Object.hasOwn(installation.dependencies ?? {}, n
 反映は**アプリ本体の再起動**で行います（ページのリフレッシュでは効きません。プラグインはサーバープロセスが
 起動時に一度だけ読み込み、ローダにファイル監視が無いため）。再起動後に `genspark_status` の
 `コマンド: 13 件を登録しました（…）` 行が出れば反映済みです（実機で確認済み）。
+
+## 変更履歴
+
+- **0.1.1**: コマンドの添付ファイル対応。`/genspark-vision`・`/genspark-summarize`・`/genspark-crawl`・
+  `/genspark-image`・`/genspark-video` がコンポーザの画像／ファイルを受け取れるようになりました。
+  実機では、宣言が無いために送信時に「添付ファイルを受け付けません」で拒否されていました（ホストの
+  `dsh-commands` は `input.attachments = true` を宣言したコマンドにだけ添付を渡す仕様）。
+  また vision 系の結果は一覧整形ではなく分析本文を表示するようにしました（`{results:[{url, result}]}` の
+  `result` が一覧整形で落ちていたため）。
+- **0.1.0**: 初版（`/genspark-model` を `/genspark-vision` に置き換え、既定の汎用モデルで画像・動画・音声を理解）。
