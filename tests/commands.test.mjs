@@ -289,6 +289,48 @@ test('genspark-video は既定モデルと 30 分のタイムアウト下限を�
   assert.deepEqual(calls[0].options.globalArgs, ['--output', 'json', '--timeout', '1800000', '--no-input']);
 });
 
+// ── 誤爆ガード（生成コマンドにモデル一覧・使い方を書いても課金しない） ────────────
+
+const withModelTools = () => harness({ tools: [...FAKE_TOOLS, ...MODEL_TOOLS] });
+const ranTool = (calls) => calls.some((call) => typeof call.toolName === 'string');
+
+test('生成コマンドはモデル一覧の依頼を生成せずにモデル一覧で返す', async () => {
+  const { byName, calls } = withModelTools();
+  const video = await byName.get('genspark-video').handler(inv('動画モデルのリストください'));
+  assert.equal(ranTool(calls), false, 'モデル一覧の依頼で生成ツールが実行された');
+  assert.equal(video.kind, 'success');
+  assert.match(video.text, /生成は行っていません/);
+  assert.match(video.text, /kling\/v3/);
+
+  const audio = await byName.get('genspark-audio').handler(inv('使える音声モデルを教えて'));
+  assert.equal(ranTool(calls), false);
+  assert.match(audio.text, /elevenlabs\/v4-tts/);
+});
+
+test('生成コマンドは「使い方」でクレジットを消費しない', async () => {
+  const { byName, calls } = withModelTools();
+  const result = await byName.get('genspark-image').handler(inv('使い方'));
+  assert.equal(ranTool(calls), false, '「使い方」で生成ツールが実行された');
+  assert.equal(result.kind, 'success');
+  assert.match(result.text, /\/genspark-image の使い方/);
+  assert.match(result.text, /クレジットは消費していません/);
+});
+
+test('「モデル」を含む通常の生成依頼はガードせず生成する', async () => {
+  const { byName, calls } = withModelTools();
+  await byName.get('genspark-video').handler(inv('モデルのような女性が歩く動画'));
+  assert.equal(calls[0].toolName, 'video_generation');
+  assert.equal(calls[0].toolArgs.query, 'モデルのような女性が歩く動画');
+});
+
+test('添付があるときはモデル一覧の文言でも生成する（生成対象が明確なため）', async () => {
+  const { byName, calls } = withModelTools();
+  const store = { imageHostPath: () => 'C:\\tmp\\ref.png' };
+  await byName.get('genspark-video').handler(invAttached('モデルのリスト', [imageBlock('sha256:i3', 'ref.png')], store));
+  assert.equal(calls[0].toolName, 'video_generation');
+  assert.deepEqual(calls[0].toolArgs.image_urls, ['C:\\tmp\\ref.png']);
+});
+
 test('genspark-summarize は URL だけでも既定の質問で実行できる', async () => {
   const { byName, calls } = harness({});
   await byName.get('genspark-summarize').handler(inv('https://example.com/doc.pdf'));

@@ -9,6 +9,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import test from 'node:test';
 
 import { createCatalogCache, describeCatalogFull, filterTools, groupOf, groupSummary, summarizeCatalog } from '../lib/catalog.js';
+import { detectMetaIntent, isGenerationTool, modelKindOfTool } from '../lib/guard.js';
 import { resolveTmpRoot, writeArgsFile } from '../lib/gsk-cli.js';
 import { collectModels, formatModelList, kindOfInput } from '../lib/models.js';
 import { describeRun, isEnvelope, parseEnvelope, truncate } from '../lib/result.js';
@@ -349,4 +350,37 @@ test('kindOfInput: 日本語・別名を受け付け、未知語は undefined', 
   assert.equal(kindOfInput('文字起こし'), 'transcribe');
   assert.equal(kindOfInput('kling'), undefined);
   assert.equal(kindOfInput(''), undefined);
+});
+
+// ── guard.js（生成コマンドの誤爆ガード） ──────────────────────────────────────
+
+test('detectMetaIntent: モデル一覧の依頼を拾う', () => {
+  assert.deepEqual(detectMetaIntent('動画モデルのリストください'), { kind: 'models' });
+  assert.deepEqual(detectMetaIntent('動画モデルの一覧'), { kind: 'models' });
+  assert.deepEqual(detectMetaIntent('使える動画モデルを教えて'), { kind: 'models' });
+  assert.deepEqual(detectMetaIntent('動画モデル'), { kind: 'models' });
+  assert.deepEqual(detectMetaIntent('which video models are available'), { kind: 'models' });
+});
+
+test('detectMetaIntent: 通常の生成プロンプトは拾わない', () => {
+  assert.equal(detectMetaIntent('モデルのような女性が歩く動画'), undefined);
+  assert.equal(detectMetaIntent('モデルの写真を作ってください'), undefined);
+  assert.equal(detectMetaIntent('桜の花びらが舞う 5 秒'), undefined);
+  assert.equal(detectMetaIntent(''), undefined);
+});
+
+test('detectMetaIntent: 使い方の依頼は usage として拾う', () => {
+  assert.deepEqual(detectMetaIntent('使い方'), { kind: 'usage' });
+  assert.deepEqual(detectMetaIntent('help'), { kind: 'usage' });
+  assert.deepEqual(detectMetaIntent('何ができる？'), { kind: 'usage' });
+});
+
+test('isGenerationTool / modelKindOfTool: 生成系ツールだけを対象にする', () => {
+  assert.equal(isGenerationTool('video_generation'), true);
+  assert.equal(isGenerationTool('image_generation'), true);
+  assert.equal(isGenerationTool('audio_generation'), true);
+  assert.equal(isGenerationTool('understand_images'), false);
+  assert.equal(isGenerationTool('web_search'), false);
+  assert.equal(modelKindOfTool('video_generation'), 'video');
+  assert.equal(modelKindOfTool('understand_images'), undefined);
 });
