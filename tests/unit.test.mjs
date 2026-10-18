@@ -10,6 +10,7 @@ import test from 'node:test';
 
 import { createCatalogCache, describeCatalogFull, filterTools, groupOf, groupSummary, summarizeCatalog } from '../lib/catalog.js';
 import { resolveTmpRoot, writeArgsFile } from '../lib/gsk-cli.js';
+import { collectModels, formatModelList, kindOfInput } from '../lib/models.js';
 import { describeRun, isEnvelope, parseEnvelope, truncate } from '../lib/result.js';
 import { buildGensparkTools, resolveWritePolicy, schemaRequiresConfirmation } from '../lib/tools.js';
 
@@ -219,15 +220,19 @@ test('schemaRequiresConfirmation: action 単位の確認要否を判定する', 
   assert.equal(schemaRequiresConfirmation({ cli: { requires_confirmation: true } }, {}), true);
 });
 
-test('buildGensparkTools: 3 つのツール定義を返し、parameters が DSL 仕様に沿う', () => {
+test('buildGensparkTools: 4 つのツール定義を返し、parameters が DSL 仕様に沿う', () => {
   const defineTool = (spec) => spec;
   const tools = buildGensparkTools({ defineTool, getConfig: () => ({}), runner: {}, catalog: {} });
-  assert.deepEqual(tools.map((t) => t.name), ['genspark_run', 'genspark_tools', 'genspark_status']);
+  assert.deepEqual(tools.map((t) => t.name), ['genspark_run', 'genspark_tools', 'genspark_models', 'genspark_status']);
   const run = tools[0];
   assert.equal(run.parameters.tool.required, true);
   assert.equal(run.parameters.args.type, 'json'); // 任意 JSON を受理する annotation-only schema
   assert.equal(run.parameters.approve_write.type, 'boolean');
   assert.equal(typeof run.execute, 'function');
+  // 生成モデル一覧は kind で絞れる（enum は画像/動画/音声/文字起こし）
+  const models = tools[2];
+  assert.deepEqual(models.parameters.kind.enum, ['image', 'video', 'audio', 'transcribe']);
+  assert.equal(models.parameters.kind.required, undefined);
 });
 
 test('createCatalogCache: ls の出力を解析してキャッシュする', async () => {
@@ -308,4 +313,40 @@ test('describeRun: is not a param は従来どおり引数名の誤りとして�
   );
   assert.match(described.text, /引数の名前が Genspark 側のスキーマと一致しません/);
   assert.match(described.text, /サーバーは呼び出されていません/);
+});
+
+/** 生成モデルの enum を持つ最小カタログ。 */
+const MODEL_FIXTURE = {
+  tools: [
+    { name: 'image_generation', parameters: { properties: { model: { enum: ['img-1', 'img-2'] } } } },
+    { name: 'video_generation', parameters: { properties: { model: { enum: ['kling/v3'] } } } },
+    { name: 'audio_generation', parameters: { properties: {} } }, // model 引数なし → 一覧に出ない
+  ],
+};
+
+test('collectModels: カタログの model enum だけを拾い、model 引数の無いツールは落とす', () => {
+  const entries = collectModels(MODEL_FIXTURE);
+  assert.deepEqual(entries.map((entry) => entry.kind), ['image', 'video']);
+  assert.deepEqual(entries[0].ids, ['img-1', 'img-2']);
+  assert.equal(entries[0].command, '/genspark-image');
+  assert.equal(entries[0].toolName, 'genspark_generate_image');
+  assert.deepEqual(collectModels({ tools: [] }), []);
+});
+
+test('formatModelList: kind と部分一致で絞れ、ヒント行が付く', () => {
+  const entries = collectModels(MODEL_FIXTURE);
+  assert.match(formatModelList(entries, { kind: 'video' }), /kling\/v3/);
+  assert.doesNotMatch(formatModelList(entries, { kind: 'video' }), /img-1/);
+  assert.match(formatModelList(entries, { filter: 'img-' }), /img-1 \/ img-2/);
+  assert.match(formatModelList(entries), /get_model_info/);
+  assert.match(formatModelList(entries, { filter: 'zzz' }), /該当するモデルが見つかりませんでした/);
+});
+
+test('kindOfInput: 日本語・別名を受け付け、未知語は undefined', () => {
+  assert.equal(kindOfInput('動画'), 'video');
+  assert.equal(kindOfInput('画像'), 'image');
+  assert.equal(kindOfInput(' 音声 '), 'audio');
+  assert.equal(kindOfInput('文字起こし'), 'transcribe');
+  assert.equal(kindOfInput('kling'), undefined);
+  assert.equal(kindOfInput(''), undefined);
 });

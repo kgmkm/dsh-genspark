@@ -131,14 +131,15 @@ const okData = (text) => ({ code: 0, stdout: JSON.stringify(OK_ENVELOPE(text)), 
 
 // ── 登録されるコマンド ───────────────────────────────────────────────────────
 
-test('既定では汎用 3 + 検索・調査 6 + 生成メディア 4 の 13 コマンドを返す', () => {
+test('既定では汎用 4 + 検索・調査 6 + 生成メディア 4 の 14 コマンドを返す', () => {
   const { commands } = harness({});
-  assert.equal(commands.length, 13);
+  assert.equal(commands.length, 14);
   assert.deepEqual(
     commands.map((command) => command.name),
     [
       'genspark',
       'genspark-tools',
+      'genspark-models',
       'genspark-run',
       'genspark-search',
       'genspark-image-search',
@@ -154,10 +155,10 @@ test('既定では汎用 3 + 検索・調査 6 + 生成メディア 4 の 13 コ
   );
 });
 
-test('カテゴリを絞ると該当コマンドだけになる（汎用 3 は常時）', () => {
-  assert.equal(harness({ categories: ['search'] }).commands.length, 9);
-  assert.equal(harness({ categories: ['media'] }).commands.length, 7);
-  assert.equal(harness({ categories: [] }).commands.length, 3);
+test('カテゴリを絞ると該当コマンドだけになる（汎用 4 は常時）', () => {
+  assert.equal(harness({ categories: ['search'] }).commands.length, 10);
+  assert.equal(harness({ categories: ['media'] }).commands.length, 8);
+  assert.equal(harness({ categories: [] }).commands.length, 4);
   const { byName } = harness({ categories: ['search'] });
   assert.equal(byName.has('genspark-image'), false);
   assert.equal(byName.has('genspark-search'), true);
@@ -171,7 +172,7 @@ test('未知のカテゴリは無視してログに出す', () => {
     catalog: { load: async () => ({ tools: [] }) },
     log: (message) => logs.push(message),
   });
-  assert.equal(commands.length, 9);
+  assert.equal(commands.length, 10);
   assert.match(logs.join('\n'), /未知のカテゴリ "nope"/);
 });
 
@@ -191,7 +192,7 @@ test('コマンドのメタデータが dsh-commands の契約を満たす', () 
   // 引数が要らないのは /genspark（状態表示）だけ
   const withInput = commands.filter((command) => command.input !== undefined).map((command) => command.name);
   assert.equal(withInput.includes('genspark'), false);
-  assert.equal(withInput.length, 12);
+  assert.equal(withInput.length, 13);
 });
 
 test('添付を受け取るコマンドだけ input.attachments=true を宣言する', () => {
@@ -922,4 +923,46 @@ test('humanizeData は拾える項目が無いときだけ JSON を 1 行で出�
   const text = humanizeData({ results: [{ unknown_field: 42 }] });
   assert.match(text, /results: 1 件/);
   assert.match(text, /\{"unknown_field":42\}/);
+});
+
+/** モデル enum を持つ最小カタログ。 */
+const MODEL_TOOLS = [
+  { name: 'image_generation', parameters: { properties: { model: { enum: ['nano-banana-2.1', 'gpt-image-2'] } } } },
+  { name: 'video_generation', parameters: { properties: { model: { enum: ['kling/v3', 'gemini/veo3.1'] } } } },
+  { name: 'audio_generation', parameters: { properties: { model: { enum: ['elevenlabs/v4-tts', 'elevenlabs/music'] } } } },
+  { name: 'audio_transcribe', parameters: { properties: { model: { enum: ['whisper-1'] } } } },
+];
+
+test('/genspark-models はカタログの model enum を種類ごとに並べる', async () => {
+  const { byName } = harness({ tools: MODEL_TOOLS });
+  const result = await byName.get('genspark-models').handler(inv(''));
+  assert.equal(result.kind, 'success');
+  assert.match(result.text, /画像生成 — 2 モデル（\/genspark-image \/ genspark_generate_image）/);
+  assert.match(result.text, /nano-banana-2\.1 \/ gpt-image-2/);
+  assert.match(result.text, /動画生成 — 2 モデル/);
+  assert.match(result.text, /kling\/v3 \/ gemini\/veo3\.1/);
+  assert.match(result.text, /文字起こし — 1 モデル/);
+});
+
+test('/genspark-models は日本語の種類指定と id の部分一致で絞れる', async () => {
+  const { byName } = harness({ tools: MODEL_TOOLS });
+  const models = byName.get('genspark-models');
+
+  const video = await models.handler(inv('動画'));
+  assert.match(video.text, /kling\/v3/);
+  assert.equal(/nano-banana/.test(video.text), false);
+
+  const kling = await models.handler(inv('kling'));
+  assert.match(kling.text, /kling\/v3/);
+  assert.equal(/elevenlabs/.test(kling.text), false);
+
+  const missing = await models.handler(inv('存在しないモデル'));
+  assert.match(missing.text, /該当するモデルが見つかりませんでした/);
+});
+
+test('/genspark-models はカタログ取得の失敗をエラーで返す', async () => {
+  const { byName } = harness({ tools: MODEL_TOOLS, catalogError: new Error('boom') });
+  const result = await byName.get('genspark-models').handler(inv(''));
+  assert.equal(result.kind, 'error');
+  assert.match(result.text, /モデル一覧を取得できませんでした: boom/);
 });

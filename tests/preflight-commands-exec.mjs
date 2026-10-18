@@ -249,13 +249,13 @@ check(
 noStoreEnv.fiber.dispose();
 await settle();
 
-// --- 6. 13 コマンドすべてがディスパッチャに解決される -------------------------------
+// --- 6. 14 コマンドすべてがディスパッチャに解決される -------------------------------
 const unresolved = [];
 for (const definition of env.definitions) {
   const settled = await service.execute(agent, `/${definition.name}`, [], signal());
   if (settled === undefined) unresolved.push(definition.name);
 }
-check('13 コマンドすべてが execute で解決される', unresolved.length === 0, unresolved.join(', ') || '13/13');
+check('14 コマンドすべてが execute で解決される', unresolved.length === 0, unresolved.join(', ') || '14/14');
 
 // --- 7. 中断シグナルはハンドラを走らせない -----------------------------------------
 calls.length = 0;

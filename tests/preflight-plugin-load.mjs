@@ -2,7 +2,7 @@
 // ホスト提供モジュール（@deepseek-ai/dsh-tools など）を横に置いて **index.js を実際に読み込む**
 // プリフライト。
 //
-// 目的: 再起動後に apply() が throw すると、ツール 23 件もコマンド 13 件も丸ごと失われる。
+// 目的: 再起動後に apply() が throw すると、ツール 23 件もコマンド 14 件も丸ごと失われる。
 //       その「読み込み時の失敗」を、DSH を再起動する前に素の Node で検出する。
 //       ついでに files に漏れがあれば（＝配布物が不完全なら）ここで落ちる。
 //
@@ -131,7 +131,7 @@ check('apply() が throw しない', threw === null, threw === null ? '' : Strin
 
 const toolNames = host.tools.map((tool) => tool.name).sort();
 const commandNames = host.commands.map((command) => command.name).sort();
-check('ツール 13 件を登録', host.tools.length === 13, `${host.tools.length} 件: ${toolNames.join(', ')}`);
+check('ツール 14 件を登録', host.tools.length === 14, `${host.tools.length} 件: ${toolNames.join(', ')}`);
 check(
   '汎用 3 ツールが含まれる',
   ['genspark_run', 'genspark_status', 'genspark_tools'].every((name) => toolNames.includes(name)),
@@ -151,7 +151,7 @@ check(
     'genspark_analyze_media',
   ].every((name) => toolNames.includes(name)),
 );
-check('コマンド 13 件を登録', host.commands.length === 13, `${host.commands.length} 件`);
+check('コマンド 14 件を登録', host.commands.length === 14, `${host.commands.length} 件`);
 check(
   '登録したツールが defineTool の産物（parameters を持つ）',
   host.tools.every((tool) => typeof tool.execute === 'function' && typeof tool.parameters === 'object'),
@@ -169,7 +169,7 @@ check(
 );
 check(
   '登録結果が info ログに出る',
-  host.logs.info.some((line) => line.includes('コマンド 13 件を登録しました')),
+  host.logs.info.some((line) => line.includes('コマンド 14 件を登録しました')),
   host.logs.info.find((line) => line.includes('コマンド')) ?? '(該当なし)',
 );
 
@@ -177,12 +177,12 @@ check(
 const noCommands = makeHost();
 mod.apply(noCommands.ctx, { promotedCategories: ['search', 'media'], commands: false });
 check('commands=false でコマンド 0 件', noCommands.commands.length === 0, `${noCommands.commands.length} 件`);
-check('commands=false でもツールは 13 件', noCommands.tools.length === 13, `${noCommands.tools.length} 件`);
+check('commands=false でもツールは 14 件', noCommands.tools.length === 14, `${noCommands.tools.length} 件`);
 
 const searchOnly = makeHost();
 mod.apply(searchOnly.ctx, { promotedCategories: ['search'], commands: true });
-check('promotedCategories=["search"] でコマンド 9 件', searchOnly.commands.length === 9, `${searchOnly.commands.length} 件`);
-check('promotedCategories=["search"] でツール 9 件', searchOnly.tools.length === 9, `${searchOnly.tools.length} 件`);
+check('promotedCategories=["search"] でコマンド 10 件', searchOnly.commands.length === 10, `${searchOnly.commands.length} 件`);
+check('promotedCategories=["search"] でツール 10 件', searchOnly.tools.length === 10, `${searchOnly.tools.length} 件`);
 
 const disabled = makeHost();
 mod.apply(disabled.ctx, { enabled: false });
@@ -202,7 +202,7 @@ if (withCli) {
     const lines = String(text).split('\n');
     console.log('\n  genspark_status の出力:');
     for (const line of lines) console.log(`    ${line}`);
-    check('実 CLI の status に「コマンド:」行が出る', lines.some((line) => line.startsWith('コマンド: 13 件を登録しました')));
+    check('実 CLI の status に「コマンド:」行が出る', lines.some((line) => line.startsWith('コマンド: 14 件を登録しました')));
   } catch (error) {
     check('実 CLI の status 実行', false, String(error?.message));
   }

@@ -1,4 +1,4 @@
-// ホスト実物の dsh-commands（app.asar から抽出）に、こちらの 13 コマンド定義を
+// ホスト実物の dsh-commands（app.asar から抽出）に、こちらの 14 コマンド定義を
 // 実際に登録して検証するプリフライト。
 //
 // 目的: コマンド名・description・input.hint の契約違反や既存コマンドとの名前衝突は
@@ -82,7 +82,7 @@ for (const name of HOST_NAMES) {
 }
 check('既存コマンドを 10 件登録できた', service.list(undefined).length === HOST_NAMES.length);
 
-// --- 3. 13 コマンドをホスト validator に通す --------------------------------------
+// --- 3. 14 コマンドをホスト validator に通す --------------------------------------
 for (const definition of definitions) {
   try {
     const disposer = service.register(definition);
@@ -96,7 +96,7 @@ const listed = service.list(undefined).map((descriptor) => descriptor.name);
 const expected = definitions.map((definition) => definition.name).sort();
 const mine = listed.filter((name) => !HOST_NAMES.includes(name));
 check(
-  '登録後の一覧が 13 件と一致',
+  '登録後の一覧が 14 件と一致',
   JSON.stringify(mine) === JSON.stringify(expected),
   mine.join(', '),
 );
@@ -153,7 +153,7 @@ const commandFiber = app2.inject(['commands'], (inner) => {
 await settle();
 check('ctx.inject(["commands"]) のコールバックが走った', fired === 1, `fired=${fired}`);
 const insideCount = app2.commands.list(undefined).length;
-check('inject 経由でも 13 件が登録される', insideCount === definitions.length, `${insideCount} 件`);
+check('inject 経由でも 14 件が登録される', insideCount === definitions.length, `${insideCount} 件`);
 
 commandFiber.dispose();
 await settle();
