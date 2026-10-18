@@ -168,9 +168,11 @@
   保存できなかったときは **黙って成功にしない**（0.1.11〜）:
   - URL があれば `genspark.ai` のファイル配信に限り自前で取得して保存する（CLI の `-o` が失敗した保険）。
   - URL が無ければ `status` / `failure_reason` / `task_id` を表示し、**エラーとして返す**。
-    実測（2026-10-18）: `/genspark-video` が 6 秒で返り、ファイルも URL も無いまま「状態: 成功」と
-    表示されていた。CLI が完了を待たずに返る場合と、プロンプトが**センシティブ判定**で拒否される
-    場合があり、どちらも status を見ないと区別できない。
+    `failure_reason` が safety / policy / rejected 系なら「**安全ポリシー（センシティブ判定）により
+    拒否されました**」と日本語で案内する（0.1.12〜。英語のまま出していた）。
+    実測（2026-10-18）: NSFW の動画は `status: FAILURE` +
+    「Content was rejected by the platform's safety policy…」を返し、6 秒で終わった。
+    正常な動画は約 50 秒かかるので、**所要時間が極端に短い＝拒否**の目安になる。
   - 同じコマンドの再実行は**新しい生成**（クレジット消費）になる。まず表現を変えるか、
     Genspark の画面（履歴）で確認するよう案内する。
 - **コマンドに承認の仕組みは無い**。副作用のある操作は常に `--no-input` で実行し、確認必須・対話必須は
@@ -306,6 +308,11 @@ $env:ELECTRON_RUN_AS_NODE='1'; & 'D:\deepseek\DeepSeek Harness.exe' tests/electr
 > desktop には `dsh plugin add` が使えない。そのため `pnpm` を直接呼んでいる。
 
 ## 変更履歴
+
+- **0.1.12**: 生成の失敗理由を日本語で案内するようにした。status: FAILURE +
+  「Content was rejected by the platform's safety policy…」（英語）がそのまま出ていたため、
+  safety / policy / rejected 系を「安全ポリシー（センシティブ判定）により拒否されました」と訳し、
+  対処（表現を弱める・入力画像を変える・別モデル）を添える。
 
 - **0.1.11**: 生成メディアの保存結果を正直に報告するようにした。ファイルが無いのに「状態: 成功」と
   出ていたのを直し、`status` / `failure_reason` / `task_id` を表示して失敗ならエラーとして返す。

@@ -1006,7 +1006,33 @@ test('生成が失敗していた場合は status と理由を出してエラー
   assert.match(result.text, /status: FAILED/);
   assert.match(result.text, /sensitive content detected/);
   assert.match(result.text, /3f036086-ebfc-4173-a7e0-a793649490f4/);
-  assert.match(result.text, /センシティブ判定/);
+  assert.match(result.text, /安全ポリシー（センシティブ判定）により拒否されました/);
+  assert.match(result.text, /プロンプトの表現を弱める/);
+});
+
+test('安全ポリシーの拒否理由は英語のままでも日本語の案内を添える', async () => {
+  const { byName } = harness({
+    onRun: async () =>
+      okData({
+        generated_videos: [
+          {
+            task_id: 'dea35fcb-e749-49b9-96a7-036135d08c4f',
+            status: 'FAILURE',
+            failure_reason:
+              "Content was rejected by the platform's safety policy. Please adjust your prompt or input and try again.",
+          },
+        ],
+      }),
+  });
+  const result = await byName
+    .get('genspark-video')
+    .handler(inv('猫カフェ', process.cwd(), followupAgent([])));
+
+  assert.equal(result.kind, 'error');
+  assert.match(result.text, /status: FAILURE/);
+  assert.match(result.text, /安全ポリシー/);
+  assert.match(result.text, /別のモデルを試す/);
+  assert.doesNotMatch(result.text, /CLI が生成の完了を待たずに返ったか/);
 });
 
 test('保存できなかった場合は URL を出して成功として返す', async () => {
