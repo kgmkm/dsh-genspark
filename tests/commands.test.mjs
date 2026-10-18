@@ -122,6 +122,17 @@ const followupAgent = (seen, cwd = process.cwd()) => ({
 });
 
 /**
+ * 新しい会話（ログに turn/start が無い）を模したエージェント。
+ * セッションはヒーロー画面の判定に使う `snapshotEvents` だけを持つ。
+ */
+const freshAgent = (seen, events = [{ type: 'session' }, { type: 'command/run' }]) => ({
+  session: { header: { cwd: process.cwd() }, snapshotEvents: () => events },
+  followup(message) {
+    seen.push(message);
+  },
+});
+
+/**
  * 引き継ぎはコマンド完了を待たせないよう次のティックへ遅らせているため、
  * 検証前に 1 ティック進める（実機で「コマンドが完了しない」状態を避けるための設計）。
  */
@@ -928,6 +939,53 @@ test('commandInlineWaitMs: 0 なら生成コマンドも受付を返さず完了
   assert.equal(result.kind, 'success');
   assert.doesNotMatch(result.text, /Genspark に送信中です/);
   assert.doesNotMatch(result.text, /結果はこのあとチャットに届きます/);
+});
+
+test('新しい会話では受付と同時にターンを起こしてヒーロー画面を解除する', async () => {
+  const gate = deferred();
+  const seen = [];
+  const { byName } = harness({
+    onRun: async () => {
+      await gate.promise;
+      return okData({ url: 'https://example.com/x.mp4' });
+    },
+  });
+  const result = await byName
+    .get('genspark-video')
+    .handler(inv('うさぎカフェ', process.cwd(), freshAgent(seen)));
+
+  assert.match(result.text, /Genspark に送信中です/);
+  await tick();
+  assert.equal(seen.length, 1, '受付のターンが 1 回だけ起きる');
+  assert.match(seen[0].content[0].text, /受け付けました/);
+  assert.match(seen[0].content[0].text, /Genspark に送信中です（目安 1〜2 分/);
+  assert.deepEqual(seen[0].source, { kind: 'plugin:dsh-genspark' });
+
+  gate.resolve();
+  await settleAll();
+  assert.equal(seen.length, 2, '結果の引き継ぎが届く');
+});
+
+test('既存の会話（turn/start がある）では受付のターンを起こさない', async () => {
+  const gate = deferred();
+  const seen = [];
+  const { byName } = harness({
+    onRun: async () => {
+      await gate.promise;
+      return okData({ url: 'https://example.com/x.mp4' });
+    },
+  });
+  const result = await byName
+    .get('genspark-video')
+    .handler(inv('うさぎカフェ', process.cwd(), freshAgent(seen, [{ type: 'turn/start' }])));
+
+  assert.match(result.text, /Genspark に送信中です/);
+  await tick();
+  assert.equal(seen.length, 0, 'コマンド欄が見えるので余計なターンは起こさない');
+
+  gate.resolve();
+  await settleAll();
+  assert.equal(seen.length, 1, '結果の引き継ぎだけ届く');
 });
 
 test('早期リターン後に失敗した実行もエラーとして引き継ぐ', async () => {
