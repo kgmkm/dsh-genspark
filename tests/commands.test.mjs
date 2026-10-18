@@ -796,7 +796,43 @@ test('既定では長時間かかるコマンドを待たず、結果は引き�
   assert.match(text, /slow/); // 結果本文はチャット側に載る
 });
 
-test('生成コマンドの早期リターン文言に種別ごとの待ち時間の目安が入る', async () => {
+test('引き継ぎメッセージは V4 の user/message 必須項目（id / role / source）を持つ', async () => {
+  // `id` が無いまま永続化されると、次にセッションを開くときに
+  // 「session event at seq N lacks an identified message」で開けなくなる（実機で発生）。
+  const gate = deferred();
+  const seen = [];
+  const { byName } = harness({
+    config: { commandInlineWaitMs: 20 },
+    onRun: async () => {
+      await gate.promise;
+      return okData({ echo: 'slow' });
+    },
+  });
+  await byName.get('genspark-search').handler(inv('東京 天気', process.cwd(), followupAgent(seen)));
+  gate.resolve();
+  await settleAll();
+
+  assert.equal(seen.length, 1);
+  const message = seen[0];
+  assert.equal(message.role, 'user');
+  assert.match(message.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  assert.equal(message.source.kind, 'plugin:dsh-genspark');
+  assert.ok(Array.isArray(message.content) && message.content.length > 0);
+});
+
+test('引き継ぎのたびに id は変わる（メッセージ識別子を共有しない）', async () => {
+  const seen = [];
+  const { byName } = harness({ onRun: async () => okData({ echo: 'ok' }) });
+  const command = byName.get('genspark-search');
+  await command.handler(inv('a', process.cwd(), followupAgent(seen)));
+  await command.handler(inv('b', process.cwd(), followupAgent(seen)));
+  await settleAll();
+
+  assert.equal(seen.length, 2);
+  assert.notEqual(seen[0].id, seen[1].id);
+});
+
+test('受付メッセージに生成種別ごとの待ち時間の目安が入る', async () => {
   const gate = deferred();
   const seen = [];
   const { byName } = harness({
@@ -811,7 +847,7 @@ test('生成コマンドの早期リターン文言に種別ごとの待ち時�
     .handler(inv('うさぎカフェ', process.cwd(), followupAgent(seen)));
 
   assert.equal(result.kind, 'success');
-  assert.match(result.text, /動画を生成中です（目安 1〜2 分/);
+  assert.match(result.text, /Genspark に送信中です（目安 1〜2 分/);
   assert.match(result.text, /結果はこのあとチャットに届きます/);
 
   gate.resolve();
@@ -844,6 +880,54 @@ test('生成コマンドは既定で入力直後に「Genspark に送信中で�
   await settleAll();
   assert.equal(seen.length, 1);
   assert.match(seen[0].content[0].text, /状態: 成功/);
+});
+
+test('commandInlineWaitMs が既定の 2500 でも受付メッセージは 150ms で返る', async () => {
+  // cordis.patch.yml とスキーマ既定は 2500 を明示するため、値に従うと受付が 2.5 秒遅れる（0.1.7 の退行）。
+  const gate = deferred();
+  const seen = [];
+  const { byName } = harness({
+    config: { commandInlineWaitMs: 2500 },
+    onRun: async () => {
+      await gate.promise;
+      return okData({ url: 'https://example.com/x.mp4' });
+    },
+  });
+  const started = Date.now();
+  const result = await byName
+    .get('genspark-video')
+    .handler(inv('うさぎカフェ', process.cwd(), followupAgent(seen)));
+  const elapsed = Date.now() - started;
+
+  assert.equal(result.kind, 'success');
+  assert.match(result.text, /Genspark に送信中です/);
+  assert.ok(elapsed < 1000, `受付メッセージが遅い: ${elapsed}ms`);
+  assert.equal(seen.length, 0);
+
+  gate.resolve();
+  await settleAll();
+  assert.equal(seen.length, 1);
+});
+
+test('commandInlineWaitMs: 0 なら生成コマンドも受付を返さず完了まで待つ', async () => {
+  const gate = deferred();
+  const seen = [];
+  const { byName } = harness({
+    config: { commandInlineWaitMs: 0 },
+    onRun: async () => {
+      await gate.promise;
+      return okData({ url: 'https://example.com/x.mp4' });
+    },
+  });
+  const pending = byName
+    .get('genspark-video')
+    .handler(inv('うさぎカフェ', process.cwd(), followupAgent(seen)));
+  gate.resolve();
+  const result = await pending;
+
+  assert.equal(result.kind, 'success');
+  assert.doesNotMatch(result.text, /Genspark に送信中です/);
+  assert.doesNotMatch(result.text, /結果はこのあとチャットに届きます/);
 });
 
 test('早期リターン後に失敗した実行もエラーとして引き継ぐ', async () => {

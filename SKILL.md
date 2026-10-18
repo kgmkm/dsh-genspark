@@ -3,7 +3,7 @@
 **読者**: このプラグインを操作する AI エージェント、または改修する開発者。
 **読み方**: 人間向けの概要は [README.md](README.md)。ここにはツール定義・引数・内部挙動・実測記録・検証手順を置く。
 
-- 対象: `dsh-genspark` v0.1.4 / `@genspark/cli` 1.14.2 / 2026-10-18 実測
+- 対象: `dsh-genspark` v0.1.9 / `@genspark/cli` 1.14.2 / 2026-10-18 実測
 - 前提: `gsk login` 済み（認証情報は `~/.genspark-tool-cli/config.json`。プラグインは保持しない）
 - カタログ実測: **327 ツール / 32 グループ**（`gsk ls`）
 
@@ -149,6 +149,9 @@
 - 生成・解析系（`ACK_TOOLS`: image/video/audio_generation, understand_images, analyze_media,
   audio_transcribe, summarize_large_document, crawler）は**入力直後 150ms で受付メッセージ**を返す:
   「Genspark に送信中です（目安…）。結果はこのあとチャットに届きます。」
+  待ち時間は `commandInlineWaitMs`（既定 2500）の値ではなく **最大 150ms** を優先する
+  （設定に従うと受付が 2.5 秒遅れ、入力欄もその間凍結するため）。`commandInlineWaitMs` が 0 以下なら
+  従来どおり完了まで待ち、結果をコマンド欄に出す。
   150ms 以内に終わった検証エラー（入力不足など）はそのまま結果として返す。
   一覧・状態確認など速いコマンドは従来どおり、間に合えば結果をその場で返す。
 - 早期リターンの完了文言は生成種別ごとの目安入り（画像 15〜40 秒 / 動画 1〜2 分 / 音声 30〜60 秒。
@@ -287,6 +290,13 @@ $env:ELECTRON_RUN_AS_NODE='1'; & 'D:\deepseek\DeepSeek Harness.exe' tests/electr
 
 ## 変更履歴
 
+- **0.1.9**: 引き継ぎメッセージに `role: 'user'` と `id`（UUID）を付与した。0.1.8 までは
+  `{content, source}` だけを `agent.followup` へ渡しており、保存は通るが**次にセッションを開くときに
+  「session event at seq N lacks an identified message」で開けなくなる**（2026-10-18 実機で 2 セッションが破損）。
+  既存の壊れたログは `tools/repair-session.mjs`（ワークスペース直下）で修復できる。
+- **0.1.8**: 受付メッセージが `commandInlineWaitMs`（既定 2500）に引きずられ、0.1.7 の
+  「入力直後 150ms で返す」が実機で効いていなかったのを修正。生成・解析系は設定値に関わらず
+  最大 150ms で返す（0 以下なら従来どおり完了まで待つ）。
 - **0.1.7**: 生成・解析系のコマンドは**入力直後（150ms）に「Genspark に送信中です」**を返すようにした。
   従来は 2.5 秒待ってから「実行中です」を返していたため、その間は無反応に見えていた。
   150ms 以内に終わる検証エラーは従来どおりその場で返す。
