@@ -208,7 +208,7 @@ check(
 check('拒否時は CLI を起動しない', attachEnv.calls.length === 0, `runner 呼び出し ${attachEnv.calls.length} 件`);
 
 attachEnv.calls.length = 0;
-const visionWithImage = await attachEnv.service.execute(attachEnv.agent, line('genspark-vision'), [imageAttachment], signal());
+const visionWithImage = await attachEnv.service.execute(attachEnv.agent, line('genspark-analyze-media'), [imageAttachment], signal());
 const attachRun = attachEnv.ranTools()[0];
 check(
   '添付を宣言したコマンドは添付付きで実行できる',
@@ -226,7 +226,7 @@ check(
 attachEnv.calls.length = 0;
 const visionWithFile = await attachEnv.service.execute(
   attachEnv.agent,
-  line('genspark-vision'),
+  line('genspark-analyze-media'),
   [{ type: 'file', receiptId: 'rcpt-unknown' }],
   signal(),
 );
@@ -240,7 +240,7 @@ await settle();
 
 // 添付サービスが無いプロファイルでは、宣言していてもホストが理由を返す
 const noStoreEnv = await makeRuntime({});
-const noStore = await noStoreEnv.service.execute(noStoreEnv.agent, line('genspark-vision'), [imageAttachment], signal());
+const noStore = await noStoreEnv.service.execute(noStoreEnv.agent, line('genspark-analyze-media'), [imageAttachment], signal());
 check(
   'attachments サービスが無ければホストが理由を返す',
   noStore?.result?.kind === 'error' && /no attachment store is composed/.test(noStore.result.text),
@@ -317,9 +317,9 @@ if (withCli) {
     try { return agent.session?.header?.cwd ?? process.cwd(), true; } catch { return true; }
   })();
   // Vision はローカルファイルが必要だが、ここではコマンド登録の確認だけ（実画像は integration 側で）
-  const cliVision = await app.commands.execute(agent, '/genspark-vision D:\\Documents\\deepseek-harness\\default-workspace\\genspark-out\\test_cat.jpg', [], signal());
+  const cliVision = await app.commands.execute(agent, '/genspark-analyze-media D:\\Documents\\deepseek-harness\\default-workspace\\genspark-out\\test_cat.jpg', [], signal());
   check(
-    '/genspark-vision が実 CLI で success（画像）',
+    '/genspark-analyze-media が実 CLI で success（画像）',
     cliVision?.result?.kind === 'success' && /猫|analysis|内容/i.test(cliVision.result.text),
     cliVision?.result?.text?.split('\n')[0]?.slice(0, 70),
   );

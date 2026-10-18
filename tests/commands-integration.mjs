@@ -112,9 +112,9 @@ record(
   flat(search.text),
 );
 
-// 8) vision（画像理解）— サンプル画像で実走（読み取りのみ）
-const visionImage = await invoke('genspark-vision', 'D:\\Documents\\deepseek-harness\\default-workspace\\genspark-out\\test_cat.jpg');
-record('/genspark-vision 画像', visionImage.kind === 'success' && /猫|ねこ|cat/i.test(visionImage.text) || /analysis|内容/i.test(visionImage.text), flat(visionImage.text));
+// 8) analyze-media（メディア解析）— サンプル画像で実走（読み取りのみ）
+const visionImage = await invoke('genspark-analyze-media', 'D:\\Documents\\deepseek-harness\\default-workspace\\genspark-out\\test_cat.jpg');
+record('/genspark-analyze-media 画像', visionImage.kind === 'success' && /猫|ねこ|cat/i.test(visionImage.text) || /analysis|内容/i.test(visionImage.text), flat(visionImage.text));
 
 // 9) 生成コマンド（任意・クレジット消費）
 if (withGeneration) {

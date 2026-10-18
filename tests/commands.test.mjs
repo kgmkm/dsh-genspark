@@ -149,7 +149,7 @@ test('既定では汎用 3 + 検索・調査 6 + 生成メディア 4 の 13 コ
       'genspark-image',
       'genspark-video',
       'genspark-audio',
-      'genspark-vision',
+      'genspark-analyze-media',
     ],
   );
 });
@@ -196,7 +196,7 @@ test('コマンドのメタデータが dsh-commands の契約を満たす', () 
 
 test('添付を受け取るコマンドだけ input.attachments=true を宣言する', () => {
   const { byName } = harness({});
-  const accepting = ['genspark-vision', 'genspark-summarize', 'genspark-crawl', 'genspark-image', 'genspark-video'];
+  const accepting = ['genspark-analyze-media', 'genspark-summarize', 'genspark-crawl', 'genspark-image', 'genspark-video'];
   for (const name of accepting) {
     assert.equal(byName.get(name).input?.attachments, true, `${name} が添付を受け取れない`);
   }
@@ -300,13 +300,13 @@ test('genspark-summarize は URL だけでも既定の質問で実行できる',
   assert.deepEqual(calls[0].toolArgs, { url: 'https://example.com/doc.pdf', question: '何が書いてある？' });
 });
 
-test('genspark-maps / genspark-vision の引数変換', async () => {
+test('genspark-maps / genspark-analyze-media の引数変換', async () => {
   const { byName, calls } = harness({});
   await byName.get('genspark-maps').handler(inv('東京駅周辺のカフェ'));
   assert.deepEqual(calls[0].toolArgs, { query_type: 'search', engine: 'maps', query: '東京駅周辺のカフェ' });
-  await byName.get('genspark-vision').handler(inv('https://example.com/cat.jpg この猫は何をしている？'));
+  await byName.get('genspark-analyze-media').handler(inv('https://example.com/cat.jpg この猫は何をしている？'));
   assert.deepEqual(calls[1].toolArgs, { image_urls: ['https://example.com/cat.jpg'], instruction: 'この猫は何をしている？' });
-  await byName.get('genspark-vision').handler(inv('https://example.com/clip.mp4'));
+  await byName.get('genspark-analyze-media').handler(inv('https://example.com/clip.mp4'));
   assert.deepEqual(calls[2].toolArgs, { media_urls: ['https://example.com/clip.mp4'], requirements: 'このメディアの内容を日本語で詳しく説明してください。' });
   assert.equal(calls[2].toolName, 'analyze_media');
 });
@@ -439,10 +439,10 @@ test('genspark-run は対話必須・要確認の操作を実行しない', asyn
 
 // ── 添付ファイル（コンポーザの画像・ファイル） ─────────────────────────────
 
-test('genspark-vision は添付画像をホストパスへ解決して understand_images に渡す', async () => {
+test('genspark-analyze-media は添付画像をホストパスへ解決して understand_images に渡す', async () => {
   const { byName, calls } = harness({});
   const store = { imageHostPath: () => 'C:\\tmp\\test_cat.jpg' };
-  const result = await byName.get('genspark-vision').handler(invAttached('', [imageBlock()], store));
+  const result = await byName.get('genspark-analyze-media').handler(invAttached('', [imageBlock()], store));
   assert.equal(result.kind, 'success');
   assert.equal(calls[0].toolName, 'understand_images');
   assert.deepEqual(calls[0].toolArgs, {
@@ -451,15 +451,15 @@ test('genspark-vision は添付画像をホストパスへ解決して understan
   });
 });
 
-test('genspark-vision は添付＋指示文を指示として渡す（入力はメディア指定として解釈しない）', async () => {
+test('genspark-analyze-media は添付＋指示文を指示として渡す（入力はメディア指定として解釈しない）', async () => {
   const { byName, calls } = harness({});
   const store = { imageHostPath: () => 'C:\\tmp\\a.jpg' };
-  await byName.get('genspark-vision').handler(invAttached('この猫は何をしている？', [imageBlock()], store));
+  await byName.get('genspark-analyze-media').handler(invAttached('この猫は何をしている？', [imageBlock()], store));
   assert.deepEqual(calls[0].toolArgs, { image_urls: ['C:\\tmp\\a.jpg'], instruction: 'この猫は何をしている？' });
 });
 
 test('添付ストアが無ければ CLI を起動せず日本語で案内する', async () => {  const { byName, calls } = harness({});
-  const result = await byName.get('genspark-vision').handler({
+  const result = await byName.get('genspark-analyze-media').handler({
     rawInput: '',
     commandId: 'c3',
     attachments: [imageBlock()],
@@ -475,7 +475,7 @@ test('プラグインの ctx 経由でも添付を解決できる（agent に ct
   const store = { imageHostPath: () => 'C:\\tmp\\from-ctx.jpg' };
   const ctx = { get: (name) => (name === 'attachments' ? store : undefined) };
   const { byName, calls } = harness({ ctx });
-  const result = await byName.get('genspark-vision').handler({
+  const result = await byName.get('genspark-analyze-media').handler({
     rawInput: '',
     commandId: 'c4',
     attachments: [imageBlock()],
@@ -494,7 +494,7 @@ test('拡張子なしのホストパス（実ストアの画像）は拡張子�
   writeFileSync(hostPath, 'normalized-jpeg-bytes');
   const store = { imageHostPath: () => hostPath };
   const { byName, calls } = harness({});
-  const result = await byName.get('genspark-vision').handler(invAttached('', [imageBlock()], store, dir));
+  const result = await byName.get('genspark-analyze-media').handler(invAttached('', [imageBlock()], store, dir));
   assert.equal(result.kind, 'success');
   const used = calls[0].toolArgs.image_urls[0];
   assert.notEqual(used, hostPath, '拡張子の無いパスをそのまま渡している');
@@ -511,7 +511,7 @@ test('ホストパスが取れない添付は readImage のバイト列を gensp
     readImage: async () => ({ data: Buffer.from('fake-image-bytes') }),
   };
   const { byName, calls } = harness({});
-  const result = await byName.get('genspark-vision').handler(invAttached('', [imageBlock()], store, dir));
+  const result = await byName.get('genspark-analyze-media').handler(invAttached('', [imageBlock()], store, dir));
   assert.equal(result.kind, 'success');
   const written = existsSync(join(dir, 'genspark-out', 'attachments'))
     ? readdirSync(join(dir, 'genspark-out', 'attachments'))
@@ -551,7 +551,7 @@ test('genspark-summarize / genspark-crawl は添付ファイルを対象にす�
   assert.deepEqual(calls[1].toolArgs, { url: doc });
 });
 
-test('vision の結果は一覧整形せず分析本文を出す', async () => {
+test('メディア解析の結果は一覧整形せず分析本文を出す', async () => {
   const { byName } = harness({
     runResult: {
       code: 0,
@@ -565,7 +565,7 @@ test('vision の結果は一覧整形せず分析本文を出す', async () => {
     },
   });
   const store = { imageHostPath: () => 'C:\\tmp\\a.jpg' };
-  const result = await byName.get('genspark-vision').handler(invAttached('', [imageBlock()], store));
+  const result = await byName.get('genspark-analyze-media').handler(invAttached('', [imageBlock()], store));
   assert.equal(result.kind, 'success');
   assert.match(result.text, /茶トラ猫がテーブルに座っています。/);
   assert.equal(/"validate"/.test(result.text), false);

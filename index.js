@@ -76,7 +76,7 @@ async function loadConfigSchema() {
       /**
        * 型付きツール（昇格ツール）として登録するカテゴリ。
        *   search … 検索・調査（web_search / image_search / crawler / scholar_search / maps_search / summarize）
-       *   media  … 生成メディア（image / video / audio / vision）
+       *   media  … 生成メディアとメディア解析（generate_image / generate_video / generate_audio / analyze_media）
        *   social … ソーシャルメディア（枠のみ。ツールは未実装）
        * 空配列にすると genspark_run / genspark_tools / genspark_status の 3 つだけになる。
        */

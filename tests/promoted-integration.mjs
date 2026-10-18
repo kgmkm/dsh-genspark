@@ -62,9 +62,9 @@ record('genspark_image_search', !/失敗|エラー/.test(imageSearch.slice(0, 20
 const scholar = await byName.get('genspark_scholar_search').execute({ query: 'diffusion model speech synthesis' }, exec);
 record('genspark_scholar_search', !/失敗|エラー|project/i.test(scholar.slice(0, 200)), flat(scholar));
 
-// 5) vision（画像理解）— サンプル画像で実走
-const vision = await byName.get('genspark_vision').execute({ media: 'D:\\Documents\\deepseek-harness\\default-workspace\\genspark-out\\test_cat.jpg' }, exec);
-record('genspark_vision', /猫|ねこ|cat|内容|analysis/i.test(vision) && !/失敗|エラー/.test(vision.slice(0, 200)), flat(vision));
+// 5) analyze-media（メディア解析）— サンプル画像で実走
+const vision = await byName.get('genspark_analyze_media').execute({ media: 'D:\\Documents\\deepseek-harness\\default-workspace\\genspark-out\\test_cat.jpg' }, exec);
+record('genspark_analyze_media', /猫|ねこ|cat|内容|analysis/i.test(vision) && !/失敗|エラー/.test(vision.slice(0, 200)), flat(vision));
 
 // 6) 引数検証は CLI を起動せずに弾く
 const invalid = await byName.get('genspark_maps_search').execute({ query_type: 'search', engine: 'maps' }, exec);

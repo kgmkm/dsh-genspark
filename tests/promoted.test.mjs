@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { PROMOTED_CATEGORIES, PROMOTED_TOOLS, buildPromotedTools, describeSavedFile, detectFileFormat, promotedSummary, resolvePromotedCategories, visionKindOf } from '../lib/promoted.js';
+import { PROMOTED_CATEGORIES, PROMOTED_TOOLS, buildPromotedTools, describeSavedFile, detectFileFormat, promotedSummary, resolvePromotedCategories, mediaKindOf } from '../lib/promoted.js';
 
 /** defineTool を素通しさせて定義オブジェクトを集める。 */
 function collect({ categories, runResult, calls, log } = {}) {
@@ -52,7 +52,7 @@ test('既定では検索・調査と生成メディアの 10 ツールを登録�
     'genspark_generate_image',
     'genspark_generate_video',
     'genspark_generate_audio',
-    'genspark_vision',
+    'genspark_analyze_media',
   ]);
 });
 
@@ -289,10 +289,10 @@ test('generate_audio: prompt 必須・params は JSON のまま渡る', async ()
   assert.deepEqual(calls[0].toolArgs, { prompt: 'こんにちは', model: 'alibaba/qwen-audio-3-tts', params: { speed: 1.1 } });
 });
 
-test('vision: media 必須、画像は understand_images、動画は analyze_media、音声は audio_transcribe', async () => {
+test('analyze-media: media 必須、画像は understand_images、動画は analyze_media、音声は audio_transcribe', async () => {
   const calls = [];
   const tools = collect({ categories: ['media'], calls });
-  const vision = tools.find((tool) => tool.name === 'genspark_vision');
+  const vision = tools.find((tool) => tool.name === 'genspark_analyze_media');
   assert.match(await vision.execute({}, EXEC), /media は必須です/);
   // URL は通す（画像）
   await vision.execute({ media: 'https://example.com/photo.jpg' }, EXEC);
@@ -310,7 +310,7 @@ test('vision: media 必須、画像は understand_images、動画は analyze_med
   assert.deepEqual(calls[0].toolArgs, { audio_urls: ['https://example.com/voice.mp3'] });
   calls.length = 0;
   // 存在するローカル画像ファイル
-  const dir = mkdtempSync(join(tmpdir(), 'genspark-vision-'));
+  const dir = mkdtempSync(join(tmpdir(), 'genspark-analyze-media-'));
   const file = join(dir, 'test.jpg');
   writeFileSync(file, 'dummy');
   await vision.execute({ media: file, instruction: '猫を数えて' }, EXEC);
@@ -318,14 +318,14 @@ test('vision: media 必須、画像は understand_images、動画は analyze_med
   assert.deepEqual(calls[0].toolArgs, { image_urls: [file], instruction: '猫を数えて' });
 });
 
-test('vision: URL でないローカルパスで存在しないものはエラー', async () => {
+test('analyze-media: URL でないローカルパスで存在しないものはエラー', async () => {
   const tools = collect({ categories: ['media'] });
-  const vision = tools.find((tool) => tool.name === 'genspark_vision');
+  const vision = tools.find((tool) => tool.name === 'genspark_analyze_media');
   assert.match(await vision.execute({ media: 'これはテストです' }, EXEC), /http\(s\) で始まる URL/);
 });
 
-test('vision: media_list（コマンドの添付）は種類ごとに振り分ける', () => {
-  const spec = PROMOTED_TOOLS.find((tool) => tool.name === 'genspark_vision');
+test('analyze-media: media_list（コマンドの添付）は種類ごとに振り分ける', () => {
+  const spec = PROMOTED_TOOLS.find((tool) => tool.name === 'genspark_analyze_media');
   const images = spec.build({ media_list: ['https://example.com/a.png', 'https://example.com/b.jpg'], instruction: '比較して' });
   assert.equal(images.gsk, 'understand_images');
   assert.deepEqual(images.args, {
@@ -347,11 +347,11 @@ test('vision: media_list（コマンドの添付）は種類ごとに振り分�
   assert.deepEqual(mixed.args.image_urls, ['https://example.com/a.png']);
 });
 
-test('visionKindOf: 拡張子で分類する（クエリ付き URL も可）', () => {
-  assert.equal(visionKindOf('https://example.com/a.JPG'), 'image');
-  assert.equal(visionKindOf('https://example.com/v.mp4?token=abc'), 'video');
-  assert.equal(visionKindOf('https://example.com/a.m4a#t=1'), 'audio');
-  assert.equal(visionKindOf('C:\\tmp\\noext'), 'image');
+test('mediaKindOf: 拡張子で分類する（クエリ付き URL も可）', () => {
+  assert.equal(mediaKindOf('https://example.com/a.JPG'), 'image');
+  assert.equal(mediaKindOf('https://example.com/v.mp4?token=abc'), 'video');
+  assert.equal(mediaKindOf('https://example.com/a.m4a#t=1'), 'audio');
+  assert.equal(mediaKindOf('C:\\tmp\\noext'), 'image');
 });
 
 test('extra は型付き引数を上書きしない（型付きが優先）', async () => {

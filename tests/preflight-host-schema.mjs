@@ -43,7 +43,7 @@ const SAMPLES = {
   },
   genspark_generate_video: { query: '海辺の夕日', model: 'kling/v3' },
   genspark_generate_audio: { prompt: 'こんにちは', audio_type: 'speech', params: { speed: 1 } },
-  genspark_vision: { media: 'https://example.com/photo.jpg', instruction: '何が写っている？' },
+  genspark_analyze_media: { media: 'https://example.com/photo.jpg', instruction: '何が写っている？' },
 };
 
 const categories = ['search', 'media'];

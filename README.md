@@ -53,7 +53,12 @@ DeepSeek Harness（DSH）から **Genspark** の各種機能を使えるよう�
 | `genspark_generate_image` | `image_generation` | `query`, `image_urls`, `model`, `aspect_ratio`, `image_size`, `save_to` |
 | `genspark_generate_video` | `video_generation` | `query`, `model`(必須), `image_urls`, `duration`, `audio_enable`, `save_to` |
 | `genspark_generate_audio` | `audio_generation` | `prompt`, `model`, `audio_type`, `params`, `save_to` |
-| `genspark_vision` | `understand_images` / `analyze_media` / `audio_transcribe` | `media`, `instruction` |
+
+**`media`（メディア解析＝画像・動画・音声の理解）**
+
+| ツール | Genspark 側 | 主な引数 |
+|---|---|---|
+| `genspark_analyze_media` | `understand_images` / `analyze_media` / `audio_transcribe` | `media`, `instruction` |
 
 - 生成メディアの `save_to` は CLI の `-o/--output-file` に渡され、**ローカルへダウンロード**されます
   （相対パスはセッションの作業ディレクトリ基準）。省略すると URL だけが返ります。
@@ -95,11 +100,11 @@ DeepSeek Harness（DSH）から **Genspark** の各種機能を使えるよう�
 | `/genspark-image` | 画像生成 → `genspark-out/` へ保存（**添付画像は参照画像**） | 生成したい画像の説明 |
 | `/genspark-video` | 動画生成（既定 `kling/v3`）→ 保存（**添付画像は先頭フレーム**） | 生成したい動画の説明 |
 | `/genspark-audio` | 音声・音楽生成 → 保存 | 読み上げ原稿 or 生成内容 |
-| `/genspark-vision` | メディア理解（画像・動画・音声を既定の汎用モデルで説明。**添付ファイル可**） | `<パス or URL> [指示]` |
+| `/genspark-analyze-media` | メディア解析（画像・動画・音声を既定の汎用モデルで理解・説明。**添付ファイル可**） | `<パス or URL> [指示]` |
 
-- **添付ファイル（コンポーザの画像・ファイル）に対応しています**（`/genspark-vision`・`/genspark-summarize`・
+- **添付ファイル（コンポーザの画像・ファイル）に対応しています**（`/genspark-analyze-media`・`/genspark-summarize`・
   `/genspark-crawl`・`/genspark-image`・`/genspark-video`）。添付を付けてコマンドを送ると、入力欄の文字は
-  「指示・質問」として扱われ、対象は添付ファイルになります（例: 画像を添付して `/genspark-vision 猫を数えて`）。
+  「指示・質問」として扱われ、対象は添付ファイルになります（例: 画像を添付して `/genspark-analyze-media 猫を数えて`）。
   ホストは `input.attachments = true` を宣言したコマンドにだけ添付を渡すため、未宣言だと送信時に
   「添付ファイルを受け付けません」で拒否されます（実機で発生した不具合。`lib/commands.js` で宣言）。
   添付は `invocation.attachments`（`ImageBlock` / `FileBlock`）として届き、プラグインが
@@ -257,15 +262,19 @@ const removable = installed && !Object.hasOwn(installation.dependencies ?? {}, n
 
 ## 変更履歴
 
+- **0.1.3**: 名前の整理。`/genspark-vision` → **`/genspark-analyze-media`**、
+  `genspark_vision` → **`genspark_analyze_media`** に改名しました（音声・動画も扱うため `vision` は
+  実態と合わず、`genspark_<動詞>_<対象>` という既存の昇格ツール規則にも揃えるため）。
+  旧名の互換エイリアスは置いていません（メニューに同じ機能が二重に出るのを避けるため）。
 - **0.1.2**: 文字起こし結果の表示を修正。`audio_transcribe` は
   `{ "<url>": { full_text, segments, words, … } }` を返し、`full_text` が空のことが多いため
   JSON 全体（単語別タイムスタンプ `words` を含む）がコマンド欄と引き継ぎに流れていました。
   `full_text` → `segments`（文字列／配列）の順で本文だけを表示し、`language` と URL を添えます
   （`words` は JSON へ落ちる場合も畳みます）。
-- **0.1.1**: コマンドの添付ファイル対応。`/genspark-vision`・`/genspark-summarize`・`/genspark-crawl`・
+- **0.1.1**: コマンドの添付ファイル対応。`/genspark-analyze-media`・`/genspark-summarize`・`/genspark-crawl`・
   `/genspark-image`・`/genspark-video` がコンポーザの画像／ファイルを受け取れるようになりました。
   実機では、宣言が無いために送信時に「添付ファイルを受け付けません」で拒否されていました（ホストの
   `dsh-commands` は `input.attachments = true` を宣言したコマンドにだけ添付を渡す仕様）。
   また vision 系の結果は一覧整形ではなく分析本文を表示するようにしました（`{results:[{url, result}]}` の
   `result` が一覧整形で落ちていたため）。
-- **0.1.0**: 初版（`/genspark-model` を `/genspark-vision` に置き換え、既定の汎用モデルで画像・動画・音声を理解）。
+- **0.1.0**: 初版（`/genspark-model` を `/genspark-analyze-media` に置き換え、既定の汎用モデルで画像・動画・音声を理解）。
