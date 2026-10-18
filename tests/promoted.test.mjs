@@ -69,9 +69,9 @@ test('未知のカテゴリは無視してログに出す', () => {
   assert.match(logs.join('\n'), /未知のカテゴリ "nope"/);
 });
 
-test('social カテゴリは枠だけ（ツール 0 件）', () => {
+test('social カテゴリは 3 ツール（X / Instagram / Reddit）', () => {
   assert.ok(Object.hasOwn(PROMOTED_CATEGORIES, 'social'));
-  assert.equal(PROMOTED_TOOLS.filter((spec) => spec.category === 'social').length, 0);
+  assert.equal(PROMOTED_TOOLS.filter((spec) => spec.category === 'social').length, 3);
 });
 
 test('resolvePromotedCategories / promotedSummary', () => {

@@ -39,7 +39,7 @@
 
 ### 1.2 昇格ツール（カテゴリ厳選）
 
-`promotedCategories`（既定 `["search","media"]`）で選択。引数の探索を省略して直接呼べる。
+`promotedCategories`（既定 `["search","media","social"]`）で選択。引数の探索を省略して直接呼べる。
 どのツールも `genspark_run` から実行できるが、こちらは引数名を調べずに済む。
 
 **`search`（検索・調査）**
@@ -75,9 +75,27 @@
   **スキーマに無いキーは CLI が拒否**する（サーバー呼び出し前なのでクレジットは消費しない）。
 - 生成モデルは **enum で縛らない**（Genspark 側の追加・廃止が頻繁なため）。実値は `genspark_models` が返す。
   壊れた id は CLI がサーバー呼び出し前に弾く。
-- `social` カテゴリは枠だけ（ツール未実装）。
 - `genspark_crawl` / `genspark_summarize_document` は URL 前提。`http(s)://` かローカルファイルパスを渡す。
   日本語の質問を渡すと CLI 起動前に日本語で案内する（`web_search` / `genspark_run` へ誘導）。
+
+**`social`（SNS 検索。X / Instagram / Reddit の計 30 API）**
+
+| ツール | Genspark 側 | 主な引数 |
+|---|---|---|
+| `genspark_x_search` | `social_twitter`（`gsk social twitter`） | `query`, `action`（既定 auto）, `post_id`, `post_ids`, `start_date`, `end_date`, `language`, `limit`（既定 25）, `raw` |
+| `genspark_instagram_search` | `social_instagram`（`gsk social instagram`） | `query`, `action`, `post_id`, `post_ids`, `start_date`, `end_date`, `limit`, `raw` |
+| `genspark_reddit_search` | `social_reddit`（`gsk social reddit`） | `query`, `action`, `subreddit`, `sort`, `time`, `start_date`, `end_date`, `limit`, `raw` |
+
+- `action` を省くと `lib/social.js` の `autoAction()` が判定する（`@handle` → `get_user`、
+  `from:handle` → `get_posts_by_author`、それ以外 → `search_posts`）。ユーザー検索は `search_users`。
+- **サーバーは `limit` を無視して 100〜127 件返す**ため、表示は既定 25 件に切る
+  （`limit` で 1〜100、全件・全フィールドが必要なら `raw: true` の JSON）。
+- 投稿 URL は生データに無いことがある（X / Reddit）ので id から組み立てる
+  （`https://x.com/<user>/status/<id>` / `https://www.reddit.com/r/<sub>/comments/<id>`）。
+- 一部 action は上流 API の制限で失敗する（2026-10-18 実測: `count_posts`、Reddit の
+  `search_comments` / `search_subreddits` が「Failed to execute … action」）。日本語で説明し代替案を添える。
+- 課金は 1 回あたり **約 1.6 クレジット**（実測: 13 回で 20.8）。Instagram の投稿検索は 10〜15 秒。
+- Reddit の検索精度は上流依存で、`query` だけだと無関係なサブレディットが混ざる。`subreddit` で絞るとよい。
 
 ### 1.3 メディア解析の振り分け（`genspark_analyze_media`）
 
@@ -95,7 +113,7 @@
 
 ---
 
-## 2. コマンド（14 件）
+## 2. コマンド（18 件）
 
 ホストの `ctx.commands.register({name, description, input, handler})` で登録する。
 `handler` は `{kind:'success'|'error', text}` を返す。名前は `/^[a-z][a-z0-9_-]*$/`。
@@ -116,6 +134,10 @@
 | `/genspark-video` | `video_generation` | ✅（先頭フレーム） |
 | `/genspark-audio` | `audio_generation` | — |
 | `/genspark-analyze-media` | `understand_images` / `analyze_media` / `audio_transcribe` | ✅ |
+| `/genspark-social` | AI がサービスと action を選ぶ（API は呼ばない） | — |
+| `/genspark-x` | 同上（X のみ） | — |
+| `/genspark-instagram` | 同上（Instagram のみ） | — |
+| `/genspark-reddit` | 同上（Reddit のみ） | — |
 
 ### 2.1 添付ファイル（コンポーザの画像・ファイル）
 
@@ -200,6 +222,18 @@
 - 遷移が終わって open になったあとも、まだ一度もターンが無いセッションではヒーロー画面が
   チャット欄を覆う。こちらは 2.2 の `scheduleReceipt`（プラグイン側）で解除する。
 
+### 2.5 振り分けコマンド（`/genspark-social` 系）
+
+- これら 4 コマンドは **API を呼ばない**（クレジットを消費しない・数 ms で完了する）。
+  受け付けた文言を `promptFor` で「どのサービスをどの action で調べるか」まで含む依頼文に変換し、
+  `agent.followup` でモデルへ渡す。モデルが `genspark_x_search` / `genspark_instagram_search` /
+  `genspark_reddit_search` を選んで実行する（`agent` が判断して API を割り振る形）。
+- コマンド欄には「X（Twitter）・Instagram・Reddit を AI が選んで検索します:「…」」を返す。
+- `commandFollowup: false` と `agent.followup` が無い環境では振り分けできないため、
+  理由と代替（ツールを直接使う）をエラー結果として返す。
+- 入力が空なら使い方だけを返し、引き継ぎは送らない（`promptFor` が `null` を返す）。
+- `social` カテゴリを無効にすると、この 4 コマンドと 3 ツールは登録されない。
+
 ---
 
 ## 3. 認証
@@ -255,6 +289,12 @@
 - **承認**: 未承認の確認必須操作は `--no-input` で拒否（exit code 2）。承認後は `--yes`。
   対話必須（`interactive_only`: slack send/react/upload/invite、google_drive share、x_post_tweet 等）は
   原理的に自動化できないため、カタログで判定して事前に拒否する。
+- **グループ付きコマンド**: `social_twitter` のようなツールは `gsk social twitter` で実行する
+  （`gsk social_twitter` は `unknown command`）。`lib/catalog.js` の `toolInvocation()` が
+  カタログの `cli.path` / `cli.group` から CLI 本体と同じ規則で解決し（path > group+sub > name）、
+  `runner.runTool` の `toolCommand` に渡す。`genspark_run` もキャッシュ済みカタログで解決し、
+  `unknown command` で落ちたときだけカタログを取り直して 1 回だけ再試行する
+  （これで gmail / box / jira / linkedin など 31 グループのツールも `genspark_run` から実行できる）。
 - **コマンド登録**: `ctx.inject(['commands'], …)` で**任意依存**にする（非 GUI プロファイルで
   プラグイン全体が読み込まれなくなるのを避ける）。同一スコープで重複すると throw するため 1 件ずつ try/catch。
   `input: { hint }` を付けた行は、メニューから選ぶと即実行せず入力欄にヒントを出す。
@@ -267,6 +307,7 @@
 node tests/unit.test.mjs
 node tests/runtime.test.mjs
 node tests/promoted.test.mjs
+node tests/social.test.mjs
 node tests/commands.test.mjs
 
 # ホスト実物の dsh-tools / dsh-commands で検証（再起動前のプリフライト）
@@ -289,7 +330,7 @@ node tests/commands-integration.mjs                    # 14 コマンド（読�
 $env:ELECTRON_RUN_AS_NODE='1'; & 'D:\deepseek\DeepSeek Harness.exe' tests/electron-runtime.mjs
 ```
 
-現状の結果: 単体 129 件 / ホスト プリフライト 432 チェック（すべて成功）。
+現状の結果: 単体 173 件 / ホスト プリフライト 432 チェック（すべて成功）。
 
 ## 7. 配布形態
 
@@ -309,6 +350,14 @@ $env:ELECTRON_RUN_AS_NODE='1'; & 'D:\deepseek\DeepSeek Harness.exe' tests/electr
 
 ## 変更履歴
 
+- **0.1.13**: ソーシャルメディア検索（X / Instagram / Reddit、計 30 API）を追加した。
+  - 型付きツール `genspark_x_search` / `genspark_instagram_search` / `genspark_reddit_search`
+    （`social` カテゴリ。`action` 省略時は `@handle`→プロフィール／それ以外→投稿検索を自動判定。
+    既定 25 件・投稿 URL 付きで整形、`raw: true` で生 JSON）。
+  - 振り分けコマンド `/genspark-social` `/genspark-x` `/genspark-instagram` `/genspark-reddit`。
+    コマンド自身は API を呼ばず、`promptFor` でモデルへ依頼を渡してサービスと action を選ばせる。
+  - グループ付きコマンドの解決（`gsk social twitter`）を `toolInvocation()` として実装し、
+    `genspark_run` からも gmail / box / jira / linkedin など 31 グループのツールを実行できるようにした。
 - **0.1.12**: 生成の失敗理由を日本語で案内するようにした。status: FAILURE +
   「Content was rejected by the platform's safety policy…」（英語）がそのまま出ていたため、
   safety / policy / rejected 系を「安全ポリシー（センシティブ判定）により拒否されました」と訳し、

@@ -77,10 +77,10 @@ async function loadConfigSchema() {
        * 型付きツール（昇格ツール）として登録するカテゴリ。
        *   search … 検索・調査（web_search / image_search / crawler / scholar_search / maps_search / summarize）
        *   media  … 生成メディアとメディア解析（generate_image / generate_video / generate_audio / analyze_media）
-       *   social … ソーシャルメディア（枠のみ。ツールは未実装）
+       *   social … ソーシャルメディア（x / instagram / reddit の検索）
        * 空配列にすると genspark_run / genspark_tools / genspark_status の 3 つだけになる。
        */
-      promotedCategories: z.array(z.string()).default(['search', 'media']),
+      promotedCategories: z.array(z.string()).default(['search', 'media', 'social']),
       /**
        * コンポーザの `+` メニュー / `/` から呼べるホストコマンドを登録する。
        * コマンド自体はモデルメッセージを作らない（結果はモデル履歴の外に描画される）。

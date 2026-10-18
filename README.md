@@ -1,7 +1,8 @@
 # dsh-genspark
 
 DeepSeek Harness（DSH）から **Genspark** の AI 機能を使えるようにするプラグインです。
-検索・調査・画像/動画/音声の生成・メディア解析を、コンポーザから `/genspark-*` コマンドで呼び出せます。
+検索・調査・画像/動画/音声の生成・メディア解析・SNS（X / Instagram / Reddit）の検索を、
+コンポーザから `/genspark-*` コマンドで呼び出せます。
 
 ## はじめかた
 
@@ -74,6 +75,24 @@ desktop アプリ側にも入れる場合は `...\.dsh\profiles\desktop` に対�
 |---|---|---|
 | `/genspark-analyze-media` | 画像・動画・音声の内容を説明する（音声は文字起こし） | `/genspark-analyze-media genspark-out/test_cat.jpg 何をしている？` |
 
+### SNS を調べる
+
+`/genspark-social` は「どのサービスを調べるか」を **AI が判断して** X / Instagram / Reddit の
+適切な検索を実行します（コマンド自身は API を呼ばないので、クレジットは検索した分だけ）。
+
+| コマンド | できること | 例 |
+|---|---|---|
+| `/genspark-social` | X・Instagram・Reddit を AI が選んで検索 | `/genspark-social DeepSeek Harness の評判` |
+| `/genspark-x` | X（Twitter）だけを検索（投稿・ユーザー・プロフィール） | `/genspark-x @elonmusk の最近の投稿` |
+| `/genspark-instagram` | Instagram だけを検索（投稿・ユーザー） | `/genspark-instagram @natgeo` |
+| `/genspark-reddit` | Reddit だけを検索（投稿・コメント・サブレディット） | `/genspark-reddit local llm の評判` |
+
+- AI に頼む形でも同じことができます（「X で Genspark の評判を調べて」→ `genspark_x_search` など）。
+- 結果は既定 **25 件**までを、投稿者・日付・反応数・投稿 URL 付きで表示します。
+- 1 回あたり約 1.6 クレジット（実測）。Instagram の検索は 10〜15 秒かかることがあります。
+- X は「@ユーザー名」を渡すとプロフィール、「話題」を渡すと投稿検索になります。
+  Instagram も同様です。Reddit は `sort`（top / new など）や期間の指定ができます。
+
 ### 上級者向け
 
 | コマンド | できること | 例 |
@@ -136,7 +155,7 @@ desktop アプリ側にも入れる場合は `...\.dsh\profiles\desktop` に対�
 | `nodePath` | `""` | 子プロセスの node.exe（空なら自動探索） |
 | `writeMode` | `approve` | `approve`（未承認の書き込みは拒否） / `deny` / `allow` |
 | `timeoutMs` | `600000` | gsk 1 回あたりのタイムアウト |
-| `promotedCategories` | `["search","media"]` | 型付きツールとして登録するカテゴリ |
+| `promotedCategories` | `["search","media","social"]` | 型付きツールとして登録するカテゴリ |
 | `commands` | `true` | コンポーザにコマンドを登録する |
 | `commandFollowup` | `true` | コマンド結果を AI に渡して解釈させる |
 | `commandInlineWaitMs` | `2500` | 入力欄を待たせる上限（ミリ秒） |
@@ -156,6 +175,9 @@ desktop アプリ側にも入れる場合は `...\.dsh\profiles\desktop` に対�
 | 新しい会話で `/genspark` が何も出ない | 「新規セッション」直後はセッション作成（画面の遷移）が終わっていないことがあります。表示が落ち着いてから実行するか、先に一言送ってください。それでも出ないときは、その時刻を控えてお知らせください（ホスト側の挙動で、プラグインからは制御できません） |
 | 新しい会話で `/genspark-video` がしばらく無反応 | 生成系は受付と同時に短いターンを起こしてヒーロー画面を解除します（0.1.10〜）。それでも無反応なら、セッションの遷移が終わっていない可能性があります |
 | 動画・画像が保存されない／生成がすぐ終わる | 結果に `status` と `failure_reason`、`task_id` が出ます（0.1.11〜）。`FAILED` ならプロンプトが**センシティブ判定**で拒否された可能性があります（表現を変えてください）。同じコマンドの再実行は新しい生成＝クレジット消費です |
+| `/genspark-social` が「AI が選んで検索します」とだけ返す | 仕様です。そのあと AI が実際の検索ツールを呼び、結果をチャットで説明します |
+| SNS 検索で「実行に失敗しました」と出る | 一部の action（`count_posts`、Reddit のコメント検索など）は上流 API の制限で使えません。action を変えるか期間を広げてください |
+| Reddit の結果が話題とずれる | 上流の検索精度の問題です。サブレディットを指定すると絞れます（AI に「r/LocalLLaMA で」と頼む） |
 
 ## もっと詳しく
 
