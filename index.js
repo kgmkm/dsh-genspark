@@ -1,6 +1,6 @@
 /**
  * dsh-genspark — DeepSeek Harness から Genspark の各種機能（検索・クロール・画像/動画/音声生成・
- * メディア理解・文字起こし・AI Drive・タスクエージェント・コネクタ・SNS・株価・電話 等、実測 302 ツール）を
+ * メディア理解・文字起こし・AI Drive・タスクエージェント・コネクタ・SNS・株価・電話 等、実測 327 ツール）を
  * 利用可能にする Cordis プラグイン。
  *
  * 方式（実測に基づく確定仕様。docs/00-genspark-cli-spec-review.md を参照）:
@@ -76,7 +76,7 @@ async function loadConfigSchema() {
       /**
        * 型付きツール（昇格ツール）として登録するカテゴリ。
        *   search … 検索・調査（web_search / image_search / crawler / scholar_search / maps_search / summarize）
-       *   media  … 生成メディア（image / video / audio / get_model_info）
+       *   media  … 生成メディア（image / video / audio / vision）
        *   social … ソーシャルメディア（枠のみ。ツールは未実装）
        * 空配列にすると genspark_run / genspark_tools / genspark_status の 3 つだけになる。
        */

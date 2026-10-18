@@ -3,7 +3,7 @@
 DeepSeek Harness（DSH）から **Genspark** の各種機能を使えるようにする Cordis プラグインです。
 [@genspark/cli](https://www.npmjs.com/package/@genspark/cli)（`gsk`）を子プロセスとして呼び出します。
 
-実測（2026-10 / gsk 1.14.2）で **302 ツール / 46 グループ**が利用可能です。
+実測（2026-10-18 時点 / gsk 1.14.2）で **327 ツール / 46 グループ**が利用可能です。
 検索・クロール・画像/動画/音声生成・メディア理解・文字起こし・AI Drive・タスクエージェント（docs/slides/deep_research 等）・
 コネクタ（Gmail/Slack/Notion/MCP 等）・SNS・株価・電話・ホスティングまで含みます。
 
@@ -17,7 +17,7 @@ DeepSeek Harness（DSH）から **Genspark** の各種機能を使えるよう�
 | ツール | 用途 |
 |---|---|
 | `genspark_run` | 任意の Genspark ツールを実行する（`tool` + `args`(JSON) + 必要なら `approve_write`） |
-| `genspark_tools` | 302 ツールのカタログを閲覧・検索（`keyword` / `group` / `full=true` で完全スキーマ） |
+| `genspark_tools` | 327 ツールのカタログを閲覧・検索（`keyword` / `group` / `full=true` で完全スキーマ） |
 | `genspark_status` | 認証・CLI パス・バージョン・実行ランタイム・書き込みポリシー・カタログ状態の確認（コマンド登録の結果も表示） |
 
 典型フロー:
@@ -53,7 +53,7 @@ DeepSeek Harness（DSH）から **Genspark** の各種機能を使えるよう�
 | `genspark_generate_image` | `image_generation` | `query`, `image_urls`, `model`, `aspect_ratio`, `image_size`, `save_to` |
 | `genspark_generate_video` | `video_generation` | `query`, `model`(必須), `image_urls`, `duration`, `audio_enable`, `save_to` |
 | `genspark_generate_audio` | `audio_generation` | `prompt`, `model`, `audio_type`, `params`, `save_to` |
-| `genspark_model_info` | `get_model_info` | `model_names` |
+| `genspark_vision` | `understand_images` / `analyze_media` / `audio_transcribe` | `media`, `instruction` |
 
 - 生成メディアの `save_to` は CLI の `-o/--output-file` に渡され、**ローカルへダウンロード**されます
   （相対パスはセッションの作業ディレクトリ基準）。省略すると URL だけが返ります。
@@ -95,7 +95,7 @@ DeepSeek Harness（DSH）から **Genspark** の各種機能を使えるよう�
 | `/genspark-image` | 画像生成 → `genspark-out/` へ保存 | 生成したい画像の説明 |
 | `/genspark-video` | 動画生成（既定 `kling/v3`）→ 保存 | 生成したい動画の説明 |
 | `/genspark-audio` | 音声・音楽生成 → 保存 | 読み上げ原稿 or 生成内容 |
-| `/genspark-model` | 生成モデルの仕様（対応機能・duration・tier） | モデル名（複数可） |
+| `/genspark-vision` | メディア理解（画像・動画・音声を既定の汎用モデルで説明） | `<パス or URL> [指示]` |
 
 - 検索系の結果は**人間向けに整形**して表示します（`organic_results: 10 件（先頭 5 件を表示）` の形式。
   一覧として解釈できない応答は JSON をそのまま表示）。

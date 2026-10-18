@@ -148,7 +148,7 @@ check(
     'genspark_generate_image',
     'genspark_generate_video',
     'genspark_generate_audio',
-    'genspark_model_info',
+    'genspark_vision',
   ].every((name) => toolNames.includes(name)),
 );
 check('コマンド 13 件を登録', host.commands.length === 13, `${host.commands.length} 件`);

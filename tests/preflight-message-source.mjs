@@ -145,7 +145,7 @@ console.log('\n3. 成功経路（偽 CLI が ok を返す）');
 for (const [name, input] of [
   ['genspark-search', 'テスト'],
   ['genspark-crawl', 'https://example.com/'],
-  ['genspark-model', 'kling/v3'],
+  ['genspark-vision', 'https://example.com/photo.jpg'],
 ]) {
   const command = commands.find((item) => item.name === name);
   const before = seen.length;

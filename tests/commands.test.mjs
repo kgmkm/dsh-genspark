@@ -124,7 +124,7 @@ test('既定では汎用 3 + 検索・調査 6 + 生成メディア 4 の 13 コ
       'genspark-image',
       'genspark-video',
       'genspark-audio',
-      'genspark-model',
+      'genspark-vision',
     ],
   );
 });
@@ -263,12 +263,15 @@ test('genspark-summarize は URL だけでも既定の質問で実行できる',
   assert.deepEqual(calls[0].toolArgs, { url: 'https://example.com/doc.pdf', question: '何が書いてある？' });
 });
 
-test('genspark-maps / genspark-model の引数変換', async () => {
+test('genspark-maps / genspark-vision の引数変換', async () => {
   const { byName, calls } = harness({});
   await byName.get('genspark-maps').handler(inv('東京駅周辺のカフェ'));
   assert.deepEqual(calls[0].toolArgs, { query_type: 'search', engine: 'maps', query: '東京駅周辺のカフェ' });
-  await byName.get('genspark-model').handler(inv('kling/v3, gemini/veo3.1'));
-  assert.deepEqual(calls[1].toolArgs, { model_names: ['kling/v3', 'gemini/veo3.1'] });
+  await byName.get('genspark-vision').handler(inv('https://example.com/cat.jpg この猫は何をしている？'));
+  assert.deepEqual(calls[1].toolArgs, { image_urls: ['https://example.com/cat.jpg'], instruction: 'この猫は何をしている？' });
+  await byName.get('genspark-vision').handler(inv('https://example.com/clip.mp4'));
+  assert.deepEqual(calls[2].toolArgs, { media_urls: ['https://example.com/clip.mp4'], requirements: 'このメディアの内容を日本語で詳しく説明してください。' });
+  assert.equal(calls[2].toolName, 'analyze_media');
 });
 
 test('API エラーはエラー結果として返る', async () => {

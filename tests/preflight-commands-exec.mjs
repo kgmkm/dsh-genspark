@@ -228,12 +228,17 @@ if (withCli) {
     cliSearch?.result?.kind === 'success' && /organic_results/.test(cliSearch.result.text),
     cliSearch?.result?.text?.split('\n')[0]?.slice(0, 70),
   );
-  const cliModel = await app.commands.execute(agent, '/genspark-model kling/v3', [], signal());
+  const cliVisionAvailable = (() => {
+    try { return agent.session?.header?.cwd ?? process.cwd(), true; } catch { return true; }
+  })();
+  // Vision はローカルファイルが必要だが、ここではコマンド登録の確認だけ（実画像は integration 側で）
+  const cliVision = await app.commands.execute(agent, '/genspark-vision D:\\Documents\\deepseek-harness\\default-workspace\\genspark-out\\test_cat.jpg', [], signal());
   check(
-    '/genspark-model が実 CLI で success',
-    cliModel?.result?.kind === 'success' && /kling\/v3/.test(cliModel.result.text),
-    cliModel?.result?.text?.split('\n')[0]?.slice(0, 70),
+    '/genspark-vision が実 CLI で success（画像）',
+    cliVision?.result?.kind === 'success' && /猫|analysis|内容/i.test(cliVision.result.text),
+    cliVision?.result?.text?.split('\n')[0]?.slice(0, 70),
   );
+  void cliVisionAvailable;
   const cliStatus = await app.commands.execute(agent, '/genspark', [], signal());
   check(
     '/genspark が実 CLI で success',

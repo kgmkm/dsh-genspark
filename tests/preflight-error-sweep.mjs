@@ -219,7 +219,7 @@ for (const [name, input, why] of [
 // ── 3. ランナーが「時間切れ」「解釈できない出力」を返す場合 ────────────────────────
 console.log('3. 時間切れ・解釈できない出力');
 for (const kind of ['timeout', 'garbage']) {
-  for (const name of ['genspark-search', 'genspark-model', 'genspark-run']) {
+  for (const name of ['genspark-search', 'genspark-vision', 'genspark-run']) {
     const calls = [];
     const log = makeLog();
     const commands = makeHarness(kind, calls, log);

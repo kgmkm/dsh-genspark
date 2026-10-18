@@ -52,7 +52,7 @@ test('既定では検索・調査と生成メディアの 10 ツールを登録�
     'genspark_generate_image',
     'genspark_generate_video',
     'genspark_generate_audio',
-    'genspark_model_info',
+    'genspark_vision',
   ]);
 });
 
@@ -289,13 +289,39 @@ test('generate_audio: prompt 必須・params は JSON のまま渡る', async ()
   assert.deepEqual(calls[0].toolArgs, { prompt: 'こんにちは', model: 'alibaba/qwen-audio-3-tts', params: { speed: 1.1 } });
 });
 
-test('model_info: model_names の空要素は落として渡す', async () => {
+test('vision: media 必須、画像は understand_images、動画は analyze_media、音声は audio_transcribe', async () => {
   const calls = [];
   const tools = collect({ categories: ['media'], calls });
-  const info = tools.find((tool) => tool.name === 'genspark_model_info');
-  assert.match(await info.execute({ model_names: [] }, EXEC), /model_names/);
-  await info.execute({ model_names: ['kling/v3', '  ', ''] }, EXEC);
-  assert.deepEqual(calls[0].toolArgs, { model_names: ['kling/v3'] });
+  const vision = tools.find((tool) => tool.name === 'genspark_vision');
+  assert.match(await vision.execute({}, EXEC), /media は必須です/);
+  // URL は通す（画像）
+  await vision.execute({ media: 'https://example.com/photo.jpg' }, EXEC);
+  assert.equal(calls[0].toolName, 'understand_images');
+  assert.deepEqual(calls[0].toolArgs, { image_urls: ['https://example.com/photo.jpg'], instruction: 'このメディアの内容を日本語で詳しく説明してください。' });
+  calls.length = 0;
+  // 動画拡張子は analyze_media
+  await vision.execute({ media: 'https://example.com/clip.mp4', instruction: '何が映っている？' }, EXEC);
+  assert.equal(calls[0].toolName, 'analyze_media');
+  assert.deepEqual(calls[0].toolArgs, { media_urls: ['https://example.com/clip.mp4'], requirements: '何が映っている？' });
+  calls.length = 0;
+  // 音声拡張子は audio_transcribe
+  await vision.execute({ media: 'https://example.com/voice.mp3' }, EXEC);
+  assert.equal(calls[0].toolName, 'audio_transcribe');
+  assert.deepEqual(calls[0].toolArgs, { audio_urls: ['https://example.com/voice.mp3'] });
+  calls.length = 0;
+  // 存在するローカル画像ファイル
+  const dir = mkdtempSync(join(tmpdir(), 'genspark-vision-'));
+  const file = join(dir, 'test.jpg');
+  writeFileSync(file, 'dummy');
+  await vision.execute({ media: file, instruction: '猫を数えて' }, EXEC);
+  assert.equal(calls[0].toolName, 'understand_images');
+  assert.deepEqual(calls[0].toolArgs, { image_urls: [file], instruction: '猫を数えて' });
+});
+
+test('vision: URL でないローカルパスで存在しないものはエラー', async () => {
+  const tools = collect({ categories: ['media'] });
+  const vision = tools.find((tool) => tool.name === 'genspark_vision');
+  assert.match(await vision.execute({ media: 'これはテストです' }, EXEC), /http\(s\) で始まる URL/);
 });
 
 test('extra は型付き引数を上書きしない（型付きが優先）', async () => {
