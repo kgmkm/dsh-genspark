@@ -257,6 +257,11 @@ const removable = installed && !Object.hasOwn(installation.dependencies ?? {}, n
 
 ## 変更履歴
 
+- **0.1.2**: 文字起こし結果の表示を修正。`audio_transcribe` は
+  `{ "<url>": { full_text, segments, words, … } }` を返し、`full_text` が空のことが多いため
+  JSON 全体（単語別タイムスタンプ `words` を含む）がコマンド欄と引き継ぎに流れていました。
+  `full_text` → `segments`（文字列／配列）の順で本文だけを表示し、`language` と URL を添えます
+  （`words` は JSON へ落ちる場合も畳みます）。
 - **0.1.1**: コマンドの添付ファイル対応。`/genspark-vision`・`/genspark-summarize`・`/genspark-crawl`・
   `/genspark-image`・`/genspark-video` がコンポーザの画像／ファイルを受け取れるようになりました。
   実機では、宣言が無いために送信時に「添付ファイルを受け付けません」で拒否されていました（ホストの
