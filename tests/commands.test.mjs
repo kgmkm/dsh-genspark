@@ -796,6 +796,29 @@ test('既定では長時間かかるコマンドを待たず、結果は引き�
   assert.match(text, /slow/); // 結果本文はチャット側に載る
 });
 
+test('生成コマンドの早期リターン文言に種別ごとの待ち時間の目安が入る', async () => {
+  const gate = deferred();
+  const seen = [];
+  const { byName } = harness({
+    config: { commandInlineWaitMs: 20 },
+    onRun: async () => {
+      await gate.promise;
+      return okData({ url: 'https://example.com/x.mp4' });
+    },
+  });
+  const result = await byName
+    .get('genspark-video')
+    .handler(inv('うさぎカフェ', process.cwd(), followupAgent(seen)));
+
+  assert.equal(result.kind, 'success');
+  assert.match(result.text, /動画を生成中です（目安 1〜2 分/);
+  assert.match(result.text, /結果はこのあとチャットに届きます/);
+
+  gate.resolve();
+  await settleAll();
+  assert.equal(seen.length, 1);
+});
+
 test('早期リターン後に失敗した実行もエラーとして引き継ぐ', async () => {
   const seen = [];
   const gate = deferred();
