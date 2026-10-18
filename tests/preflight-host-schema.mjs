@@ -1,10 +1,10 @@
-// ホスト実物の dsh-tools（app.asar から抽出）で昇格ツールのスキーマを検証するプリフライト。
-// 目的: プラグイン読み込み時に defineTool が例外を投げると全ツールが失われるため、
-//       再起動の前に parameters DSL と引数検証を実際の実装で通しておく。
+// Preflight that validates the promoted-tool schemas with the real host dsh-tools (extracted from app.asar).
+// Purpose: if defineTool throws at plugin load time, every tool is lost, so run the parameters DSL and
+//          argument validation through the real implementation before a restart.
 //
-// 使い方: node tests/preflight-host-schema.mjs
-// 前提  : reference/asar/node_modules/@deepseek-ai/dsh-tools（probe/asar-extract.mjs で抽出済み）
-//         @deepseek-ai/dsh-llm は HarnessError だけのスタブ（reference/asar 内）
+// Usage: node tests/preflight-host-schema.mjs
+// Requires: reference/asar/node_modules/@deepseek-ai/dsh-tools (extracted with probe/asar-extract.mjs)
+//           @deepseek-ai/dsh-llm is a stub that only provides HarnessError (inside reference/asar)
 
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
@@ -24,26 +24,26 @@ const { buildPromotedTools } = await import(
   new URL(`file://${join(here, '..', 'lib', 'promoted.js').replace(/\\/g, '/')}`).href
 );
 
-// --- サンプル引数（各ツールの「最小の正しい呼び出し」） ---------------------------
+// --- Sample arguments (the "smallest valid call" for each tool) --------------------
 const SAMPLES = {
   genspark_web_search: { q: 'DeepSeek Harness' },
   genspark_image_search: { query: 'red panda' },
   genspark_crawl: { url: 'https://example.com', render_js: true },
   genspark_scholar_search: { query: 'kv cache compression' },
-  genspark_maps_search: { engine: 'maps', query_type: 'place', query: '東京駅' },
+  genspark_maps_search: { engine: 'maps', query_type: 'place', query: 'Tokyo Station' },
   genspark_maps_search_directions: {
     name: 'genspark_maps_search',
-    args: { engine: 'maps_directions', query_type: 'directions', start_addr: '東京駅', end_addr: '新宿駅' },
+    args: { engine: 'maps_directions', query_type: 'directions', start_addr: 'Tokyo Station', end_addr: 'Shinjuku Station' },
   },
-  genspark_summarize_document: { url: 'https://example.com/report.pdf', question: '要点は？' },
-  genspark_generate_image: { query: '猫のイラスト', model: 'gpt-image-2' },
+  genspark_summarize_document: { url: 'https://example.com/report.pdf', question: 'What are the key points?' },
+  genspark_generate_image: { query: 'illustration of a cat', model: 'gpt-image-2' },
   genspark_generate_image_i2i: {
     name: 'genspark_generate_image',
     args: { image_urls: ['https://example.com/a.png'], save_to: 'out/a.png' },
   },
-  genspark_generate_video: { query: '海辺の夕日', model: 'kling/v3' },
-  genspark_generate_audio: { prompt: 'こんにちは', audio_type: 'speech', params: { speed: 1 } },
-  genspark_analyze_media: { media: 'https://example.com/photo.jpg', instruction: '何が写っている？' },
+  genspark_generate_video: { query: 'sunset by the sea', model: 'kling/v3' },
+  genspark_generate_audio: { prompt: 'Hello', audio_type: 'speech', params: { speed: 1 } },
+  genspark_analyze_media: { media: 'https://example.com/photo.jpg', instruction: 'What is in this image?' },
 };
 
 const categories = ['search', 'media'];
@@ -70,15 +70,15 @@ const tools = buildPromotedTools({
   categories,
 });
 
-console.log(`defineTool を通過したツール: ${tools.length} 件`);
+console.log(`Tools that passed defineTool: ${tools.length}`);
 for (const tool of tools) {
   const json = tool.parameters;
-  const required = Array.isArray(json.required) ? json.required.join(', ') : '(なし)';
+  const required = Array.isArray(json.required) ? json.required.join(', ') : '(none)';
   console.log(`  ✔ ${tool.name} → required: ${required}`);
   ok += 1;
 }
 
-// --- 実行時検証（validateJsonSchemaValue 経由） ---------------------------------
+// --- Runtime validation (through validateJsonSchemaValue) ---------------------------
 const byName = new Map(tools.map((t) => [t.name, t]));
 const exec = { agent: { session: { header: { cwd: root } } } };
 
@@ -87,7 +87,7 @@ for (const [label, sample] of Object.entries(SAMPLES)) {
   const args = sample.name === undefined ? sample : sample.args;
   const tool = byName.get(name);
   if (tool === undefined) {
-    console.log(`  ✘ ${label}: ツール ${name} が登録されていない`);
+    console.log(`  ✘ ${label}: tool ${name} is not registered`);
     fail += 1;
     continue;
   }
@@ -105,27 +105,27 @@ for (const [label, sample] of Object.entries(SAMPLES)) {
   }
 }
 
-// --- 不正な引数がホスト側の検証で弾かれるか -------------------------------------
+// --- Whether invalid arguments are rejected by host-side validation ----------------
 const negatives = [
-  ['enum 違反 (audio_type)', 'genspark_generate_audio', { prompt: 'x', audio_type: 'podcast' }],
-  ['型違反 (render_js)', 'genspark_crawl', { url: 'https://example.com', render_js: 'yes' }],
-  ['必須欠落 (q)', 'genspark_web_search', {}],
+  ['enum violation (audio_type)', 'genspark_generate_audio', { prompt: 'x', audio_type: 'podcast' }],
+  ['type violation (render_js)', 'genspark_crawl', { url: 'https://example.com', render_js: 'yes' }],
+  ['missing required (q)', 'genspark_web_search', {}],
 ];
 for (const [label, name, args] of negatives) {
   const tool = byName.get(name);
   try {
     await tool.execute(args, exec);
-    console.log(`  ✘ ${label}: 弾かれなかった（検証が効いていない）`);
+    console.log(`  ✘ ${label}: was not rejected (validation is not working)`);
     fail += 1;
   } catch (error) {
-    console.log(`  ✔ ${label}: ${String(error?.name)} で拒否`);
+    console.log(`  ✔ ${label}: rejected with ${String(error?.name)}`);
     ok += 1;
   }
 }
 
-// --- 参考: DSL から生成された JSON Schema を 1 つ表示 -----------------------------
-console.log('\n参考: genspark_generate_video の JSON Schema（DSL がコンパイルされた結果）');
+// --- Reference: show one JSON Schema generated from the DSL ------------------------
+console.log('\nReference: JSON Schema of genspark_generate_video (the compiled DSL result)');
 console.log(JSON.stringify(byName.get('genspark_generate_video').parameters, null, 2).split('\n').slice(0, 40).join('\n'));
 
-console.log(`\n結果: 成功 ${ok} / 失敗 ${fail}`);
+console.log(`\nResult: ${ok} passed / ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

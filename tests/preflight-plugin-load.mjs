@@ -1,15 +1,14 @@
-// 出荷するファイル一式（package.json の files）を一時ディレクトリに配置し、
-// ホスト提供モジュール（@deepseek-ai/dsh-tools など）を横に置いて **index.js を実際に読み込む**
-// プリフライト。
+// Preflight that lays out the shipped file set (package.json "files") in a temporary directory,
+// places the host-provided modules (@deepseek-ai/dsh-tools etc.) next to it, and **actually loads index.js**.
 //
-// 目的: 再起動後に apply() が throw すると、ツール 23 件もコマンド 14 件も丸ごと失われる。
-//       その「読み込み時の失敗」を、DSH を再起動する前に素の Node で検出する。
-//       ついでに files に漏れがあれば（＝配布物が不完全なら）ここで落ちる。
+// Purpose: if apply() throws after a restart, all tools and all 14 commands are lost at once.
+//          This preflight detects that "failure at load time" with plain Node, before DSH is restarted.
+//          It also fails here if anything is missing from "files" (i.e. the distribution is incomplete).
 //
-// 使い方: node tests/preflight-plugin-load.mjs [--with-cli]
-//         --with-cli を付けると genspark_status を実 CLI で 1 回だけ実行して表示行まで確認する。
-// 前提  : reference/asar/node_modules/@deepseek-ai/*（probe/asar-extract.mjs で抽出済み）
-//         schemastery は desktop プロファイルの node_modules から借りる。
+// Usage: node tests/preflight-plugin-load.mjs [--with-cli]
+//        With --with-cli, genspark_status is executed once against the real CLI and the displayed lines are checked.
+// Requires: reference/asar/node_modules/@deepseek-ai/* (extracted with probe/asar-extract.mjs)
+//           schemastery is borrowed from the desktop profile's node_modules.
 
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -35,55 +34,55 @@ const check = (label, passed, detail = '') => {
   }
 };
 
-// --- 1. 出荷物を一時ディレクトリへ配置 --------------------------------------------
+// --- 1. Place the shipped artifacts in a temporary directory -----------------------
 const manifest = JSON.parse(readFileSync(join(pluginDir, 'package.json'), 'utf8'));
 const temp = mkdtempSync(join(tmpdir(), 'dsh-genspark-load-'));
-console.log(`一時ディレクトリ: ${temp}\n`);
+console.log(`Temporary directory: ${temp}\n`);
 
 for (const entry of manifest.files ?? []) {
   const source = join(pluginDir, entry);
   if (!existsSync(source)) {
-    check(`files の ${entry} が存在する`, false, '見つからない');
+    check(`files entry ${entry} exists`, false, 'not found');
     continue;
   }
   cpSync(source, join(temp, entry), { recursive: true });
 }
 check(
-  `package.json の files（${(manifest.files ?? []).join(', ')}）を配置`,
+  `placed package.json files (${(manifest.files ?? []).join(', ')})`,
   (manifest.files ?? []).every((entry) => existsSync(join(temp, entry))),
 );
 
-// ホスト提供モジュールを node_modules として横に置く（DSH 本体では host が解決する）
+// Place the host-provided modules as node_modules next to it (DSH itself resolves them from the host)
 const vendorDir = join(temp, 'node_modules/@deepseek-ai');
 cpSync(hostModules, vendorDir, { recursive: true, filter: (src) => !src.includes('dsh-client') });
 for (const extra of ['schemastery', 'cosmokit']) {
   const from = join(profileModules, extra);
   if (existsSync(from)) cpSync(from, join(vendorDir, extra), { recursive: true });
 }
-check('ホスト提供モジュールを node_modules に配置', existsSync(join(vendorDir, 'dsh-tools/lib/index.js')));
+check('placed host-provided modules under node_modules', existsSync(join(vendorDir, 'dsh-tools/lib/index.js')));
 
-// --- 2. index.js を実際に読み込む -------------------------------------------------
+// --- 2. Actually import index.js ----------------------------------------------------
 let mod;
 try {
   mod = await import(pathToFileURL(join(temp, 'index.js')).href);
-  check('index.js を読み込めた（import 時に throw しない）', true);
+  check('loaded index.js (does not throw at import)', true);
 } catch (error) {
-  check('index.js を読み込めた', false, `${error?.constructor?.name}: ${error?.message}`);
-  console.log(`\n結果: 成功 ${ok} / 失敗 ${fail}`);
+  check('load index.js', false, `${error?.constructor?.name}: ${error?.message}`);
+  console.log(`\nResult: ${ok} passed / ${fail} failed`);
   rmSync(temp, { recursive: true, force: true });
   process.exit(1);
 }
 
 check('export const name', mod.name === 'dsh-genspark', String(mod.name));
-check('export const inject に tools', Array.isArray(mod.inject) && mod.inject.includes('tools'), JSON.stringify(mod.inject));
+check('export const inject includes tools', Array.isArray(mod.inject) && mod.inject.includes('tools'), JSON.stringify(mod.inject));
 check('export function apply', typeof mod.apply === 'function');
 check(
-  'Config（schemastery）が解決できた',
+  'Config (schemastery) resolved',
   mod.Config !== undefined && mod.config === mod.Config,
-  mod.Config === undefined ? 'schemastery 未解決 → 生 config で動作する' : '解決済み',
+  mod.Config === undefined ? 'schemastery unresolved → runs with the raw config' : 'resolved',
 );
 
-// --- 3. 擬似ホストで apply() を走らせる -------------------------------------------
+// --- 3. Run apply() against a fake host ---------------------------------------------
 function makeHost() {
   const tools = [];
   const commands = [];
@@ -95,7 +94,7 @@ function makeHost() {
   const innerTools = { tools: { register: (tool) => tools.push(tool) }, logger };
   const innerCommands = { commands: { register: (command) => commands.push(command) }, logger };
 
-  // apply() が ctx.effect で登録する後始末を、テストから呼べるように保持する
+  // Keep the teardown registered via ctx.effect so the test can invoke it
   let teardown = () => { disposed.effect += 1; };
 
   const ctx = {
@@ -127,17 +126,17 @@ try {
 } catch (error) {
   threw = error;
 }
-check('apply() が throw しない', threw === null, threw === null ? '' : String(threw?.message));
+check('apply() does not throw', threw === null, threw === null ? '' : String(threw?.message));
 
 const toolNames = host.tools.map((tool) => tool.name).sort();
 const commandNames = host.commands.map((command) => command.name).sort();
-check('ツール 14 件を登録', host.tools.length === 14, `${host.tools.length} 件: ${toolNames.join(', ')}`);
+check('registers 14 tools', host.tools.length === 14, `${host.tools.length} items: ${toolNames.join(', ')}`);
 check(
-  '汎用 3 ツールが含まれる',
+  'includes the 3 general-purpose tools',
   ['genspark_run', 'genspark_status', 'genspark_tools'].every((name) => toolNames.includes(name)),
 );
 check(
-  '昇格ツール 10 件が含まれる',
+  'includes the 10 promoted tools',
   [
     'genspark_web_search',
     'genspark_image_search',
@@ -151,13 +150,13 @@ check(
     'genspark_analyze_media',
   ].every((name) => toolNames.includes(name)),
 );
-check('コマンド 14 件を登録', host.commands.length === 14, `${host.commands.length} 件`);
+check('registers 14 commands', host.commands.length === 14, `${host.commands.length} items`);
 check(
-  '登録したツールが defineTool の産物（parameters を持つ）',
+  'registered tools are defineTool products (have parameters)',
   host.tools.every((tool) => typeof tool.execute === 'function' && typeof tool.parameters === 'object'),
 );
 check(
-  '登録したコマンドがホスト契約を満たす',
+  'registered commands satisfy the host contract',
   host.commands.every(
     (command) =>
       /^[a-z][a-z0-9_-]*$/.test(command.name) &&
@@ -168,46 +167,46 @@ check(
   ),
 );
 check(
-  '登録結果が info ログに出る',
-  host.logs.info.some((line) => line.includes('コマンド 14 件を登録しました')),
-  host.logs.info.find((line) => line.includes('コマンド')) ?? '(該当なし)',
+  'registration result appears in the info log',
+  host.logs.info.some((line) => line.includes('commands: registered 14 commands')),
+  host.logs.info.find((line) => line.includes('commands:')) ?? '(none)',
 );
 
-// --- 4. 設定による切り替え --------------------------------------------------------
+// --- 4. Switching via settings ------------------------------------------------------
 const noCommands = makeHost();
 mod.apply(noCommands.ctx, { promotedCategories: ['search', 'media'], commands: false });
-check('commands=false でコマンド 0 件', noCommands.commands.length === 0, `${noCommands.commands.length} 件`);
-check('commands=false でもツールは 14 件', noCommands.tools.length === 14, `${noCommands.tools.length} 件`);
+check('commands=false registers 0 commands', noCommands.commands.length === 0, `${noCommands.commands.length} items`);
+check('tools stay at 14 with commands=false', noCommands.tools.length === 14, `${noCommands.tools.length} items`);
 
 const searchOnly = makeHost();
 mod.apply(searchOnly.ctx, { promotedCategories: ['search'], commands: true });
-check('promotedCategories=["search"] でコマンド 10 件', searchOnly.commands.length === 10, `${searchOnly.commands.length} 件`);
-check('promotedCategories=["search"] でツール 10 件', searchOnly.tools.length === 10, `${searchOnly.tools.length} 件`);
+check('promotedCategories=["search"] registers 10 commands', searchOnly.commands.length === 10, `${searchOnly.commands.length} items`);
+check('promotedCategories=["search"] registers 10 tools', searchOnly.tools.length === 10, `${searchOnly.tools.length} items`);
 
 const disabled = makeHost();
 mod.apply(disabled.ctx, { enabled: false });
-check('enabled=false で何も登録しない', disabled.tools.length === 0 && disabled.commands.length === 0);
+check('enabled=false registers nothing', disabled.tools.length === 0 && disabled.commands.length === 0);
 
-// --- 5. 後始末（ctx.effect の teardown）が両方を解除する ---------------------------
+// --- 5. Teardown (ctx.effect) unregisters both --------------------------------------
 const teardownHost = makeHost();
 mod.apply(teardownHost.ctx, { promotedCategories: ['search', 'media'], commands: true });
-teardownHost.teardown(); // ctx.effect に登録された後始末（DSH 終了時に走るもの）を呼ぶ
-check('teardown でツールとコマンドの両方を解除', teardownHost.disposed.tools >= 1 && teardownHost.disposed.commands >= 1, JSON.stringify(teardownHost.disposed));
+teardownHost.teardown(); // Invoke the teardown registered via ctx.effect (runs when DSH exits)
+check('teardown unregisters both tools and commands', teardownHost.disposed.tools >= 1 && teardownHost.disposed.commands >= 1, JSON.stringify(teardownHost.disposed));
 
-// --- 6. 任意: 実 CLI で genspark_status を 1 回実行 -------------------------------
+// --- 6. Optional: run genspark_status once against the real CLI ---------------------
 if (withCli) {
   const status = host.tools.find((tool) => tool.name === 'genspark_status');
   try {
     const text = await status.execute({}, { agent: { session: { header: { cwd: root } } } });
     const lines = String(text).split('\n');
-    console.log('\n  genspark_status の出力:');
+    console.log('\n  genspark_status output:');
     for (const line of lines) console.log(`    ${line}`);
-    check('実 CLI の status に「コマンド:」行が出る', lines.some((line) => line.startsWith('コマンド: 14 件を登録しました')));
+    check('real CLI status includes a "Commands:" line', lines.some((line) => line.startsWith('Commands: registered 14 commands')));
   } catch (error) {
-    check('実 CLI の status 実行', false, String(error?.message));
+    check('real CLI status execution', false, String(error?.message));
   }
 }
 
 rmSync(temp, { recursive: true, force: true });
-console.log(`\n結果: 成功 ${ok} / 失敗 ${fail}`);
+console.log(`\nResult: ${ok} passed / ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

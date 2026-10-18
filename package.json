@@ -1,7 +1,7 @@
 {
   "name": "dsh-genspark",
-  "version": "0.1.14",
-  "description": "Genspark の各種機能（検索・クロール・画像/動画/音声生成・メディア理解・文字起こし・AI Drive・タスクエージェント・コネクタ・SNS・株価・電話 等）を @genspark/cli 経由で DeepSeek Harness から利用するプラグイン。",
+  "version": "0.1.15",
+  "description": "Use Genspark capabilities (web search, crawl, image/video/audio generation, media understanding, transcription, AI Drive, task agents, connectors, social search, stock prices, phone calls) from DeepSeek Harness through @genspark/cli.",
   "type": "module",
   "main": "index.js",
   "exports": {

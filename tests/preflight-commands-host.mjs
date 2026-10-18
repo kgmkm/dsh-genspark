@@ -1,15 +1,15 @@
-// ホスト実物の dsh-commands（app.asar から抽出）に、こちらの 14 コマンド定義を
-// 実際に登録して検証するプリフライト。
+// Preflight that actually registers this plugin's 14 command definitions with the real host
+// dsh-commands (extracted from app.asar) and validates them.
 //
-// 目的: コマンド名・description・input.hint の契約違反や既存コマンドとの名前衝突は
-//       **register 時に throw** する。1 件でも throw するとそのコマンドがメニューに
-//       出ないため、再起動の前にホスト実物の validator を通しておく。
-//       さらに「サービスが無いプロファイルでも壊れない」こと（任意依存）と
-//       「fiber を dispose するとコマンドが消える」ことも確認する。
+// Purpose: contract violations in command names / descriptions / input.hint, or name collisions with
+//          existing commands, **throw at register time**. If even one throws, that command does not
+//          appear in the menu, so run the real host validator before a restart.
+//          It also verifies that "profiles without the service still work" (optional dependency) and
+//          that "disposing the fiber removes the commands".
 //
-// 使い方: node tests/preflight-commands-host.mjs
-// 前提  : reference/asar/node_modules/@deepseek-ai/{cordis,dsh-commands}（抽出済み）
-//         @deepseek-ai/dsh-llm は callConfigEquals を含む最小スタブ（reference/asar 内）
+// Usage: node tests/preflight-commands-host.mjs
+// Requires: reference/asar/node_modules/@deepseek-ai/{cordis,dsh-commands} (extracted)
+//           @deepseek-ai/dsh-llm is a minimal stub containing callConfigEquals (inside reference/asar)
 
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
@@ -42,7 +42,7 @@ const check = (label, passed, detail = '') => {
   }
 };
 
-// 登録時に CLI を起動してしまわないことを検証するためのスタブ
+// Stubs used to verify that registration never launches the CLI
 const calls = [];
 const runner = {
   async runTool(gsk, args, opts) {
@@ -66,29 +66,29 @@ const config = {
 };
 const definitions = buildGensparkCommands({ getConfig: () => config, runner, catalog, log });
 
-console.log(`ホスト実物 dsh-commands に登録するコマンド: ${definitions.length} 件\n`);
+console.log(`Commands registered with the real host dsh-commands: ${definitions.length}\n`);
 
-// --- 1. ホストサービスを実際にマウントする --------------------------------------
+// --- 1. Actually mount the host service --------------------------------------------
 const app = new cordis.Context();
 const serviceFiber = app.plugin(commandsModule.default ?? commandsModule.CommandRuntime);
 await settle();
 const service = app.commands;
-check('commands サービスがマウントされた', typeof service?.register === 'function', service?.constructor?.name);
+check('commands service is mounted', typeof service?.register === 'function', service?.constructor?.name);
 
-// --- 2. メニューに既に出ている他プラグインのコマンドを先に置く（衝突検出の前提） ----
+// --- 2. Put other plugins' commands that already appear in the menu first (collision premise) ---
 const HOST_NAMES = ['compact', 'permission', 'model', 'export', 'acp', 'acp-cache', 'feedback', 'goal', 'plan', 'file'];
 for (const name of HOST_NAMES) {
   service.register({ name, description: `host ${name}`, handler: async () => ({ kind: 'success' }) });
 }
-check('既存コマンドを 10 件登録できた', service.list(undefined).length === HOST_NAMES.length);
+check('registered 10 existing commands', service.list(undefined).length === HOST_NAMES.length);
 
-// --- 3. 14 コマンドをホスト validator に通す --------------------------------------
+// --- 3. Pass the 14 commands through the host validator ----------------------------
 for (const definition of definitions) {
   try {
     const disposer = service.register(definition);
-    check(`${definition.name} を登録`, typeof disposer === 'function');
+    check(`registered ${definition.name}`, typeof disposer === 'function');
   } catch (error) {
-    check(`${definition.name} を登録`, false, error?.message ?? String(error));
+    check(`registered ${definition.name}`, false, error?.message ?? String(error));
   }
 }
 
@@ -96,51 +96,51 @@ const listed = service.list(undefined).map((descriptor) => descriptor.name);
 const expected = definitions.map((definition) => definition.name).sort();
 const mine = listed.filter((name) => !HOST_NAMES.includes(name));
 check(
-  '登録後の一覧が 14 件と一致',
+  'post-registration list matches the 14 commands',
   JSON.stringify(mine) === JSON.stringify(expected),
   mine.join(', '),
 );
 
-// --- 4. ホスト自身のパーサ・照会で見えるか ---------------------------------------
+// --- 4. Are they visible to the host's own parser and lookup? ----------------------
 for (const definition of definitions) {
-  const parsed = commandsModule.parseCommand(`/${definition.name} テスト入力`);
-  check(`/${definition.name} がホストのパーサで解釈される`, parsed?.name === definition.name, JSON.stringify(parsed));
+  const parsed = commandsModule.parseCommand(`/${definition.name} test input`);
+  check(`/${definition.name} is parsed by the host parser`, parsed?.name === definition.name, JSON.stringify(parsed));
 
   const found = service.find(undefined, definition.name);
   check(
-    `find() で description と hint が取れる`,
+    'find() returns description and hint',
     found?.description === definition.description && found?.input?.hint === definition.input?.hint,
-    found?.input?.hint ?? '(hint なし)',
+    found?.input?.hint ?? '(no hint)',
   );
 }
 
-// --- 5. 重複登録はホストが拒否する（こちらの一意性が保証されている前提の確認） ------
+// --- 5. The host rejects duplicate registration (confirming our names are unique) ---
 try {
   service.register(definitions[0]);
-  check('同名の二重登録をホストが拒否', false, '拒否されなかった');
+  check('host rejects a duplicate registration', false, 'was not rejected');
 } catch (error) {
-  check('同名の二重登録をホストが拒否', /already registered/.test(String(error?.message)), String(error?.message).slice(0, 60));
+  check('host rejects a duplicate registration', /already registered/.test(String(error?.message)), String(error?.message).slice(0, 60));
 }
 
-// --- 6. 不正な定義はホストの validator が弾く（この検証が効いている証拠） -----------
+// --- 6. The host validator rejects invalid definitions (proof that this check works) ---
 const invalid = [
-  ['大文字を含む名前', { name: 'Genspark-Bad', description: 'x', handler: async () => ({ kind: 'success' }) }],
-  ['空の hint', { name: 'genspark-bad', description: 'x', input: { hint: '   ' }, handler: async () => ({ kind: 'success' }) }],
-  ['handler が関数でない', { name: 'genspark-bad2', description: 'x', handler: 'nope' }],
+  ['name with uppercase', { name: 'Genspark-Bad', description: 'x', handler: async () => ({ kind: 'success' }) }],
+  ['empty hint', { name: 'genspark-bad', description: 'x', input: { hint: '   ' }, handler: async () => ({ kind: 'success' }) }],
+  ['handler is not a function', { name: 'genspark-bad2', description: 'x', handler: 'nope' }],
 ];
 for (const [label, definition] of invalid) {
   try {
     service.register(definition);
-    check(`不正な定義を拒否: ${label}`, false, '拒否されなかった');
+    check(`rejects invalid definition: ${label}`, false, 'was not rejected');
   } catch (error) {
-    check(`不正な定義を拒否: ${label}`, true, String(error?.message).slice(0, 70));
+    check(`rejects invalid definition: ${label}`, true, String(error?.message).slice(0, 70));
   }
 }
 
-// --- 7. 登録は CLI を起動しない（副作用なし） -------------------------------------
-check('登録だけで CLI を呼んでいない', calls.length === 0, `runner 呼び出し ${calls.length} 件`);
+// --- 7. Registration does not launch the CLI (no side effects) ---------------------
+check('registration alone does not call the CLI', calls.length === 0, `runner calls: ${calls.length}`);
 
-// --- 8. index.js と同じ任意依存 + dispose の経路 -----------------------------------
+// --- 8. The same optional-dependency + dispose path as index.js -------------------
 const app2 = new cordis.Context();
 const serviceFiber2 = app2.plugin(commandsModule.default ?? commandsModule.CommandRuntime);
 await settle();
@@ -151,27 +151,27 @@ const commandFiber = app2.inject(['commands'], (inner) => {
   for (const definition of definitions) inner.commands.register(definition);
 });
 await settle();
-check('ctx.inject(["commands"]) のコールバックが走った', fired === 1, `fired=${fired}`);
+check('ctx.inject(["commands"]) callback ran', fired === 1, `fired=${fired}`);
 const insideCount = app2.commands.list(undefined).length;
-check('inject 経由でも 14 件が登録される', insideCount === definitions.length, `${insideCount} 件`);
+check('14 commands are registered via inject', insideCount === definitions.length, `${insideCount} items`);
 
 commandFiber.dispose();
 await settle();
 const afterDispose = app2.commands.list(undefined).length;
-check('fiber.dispose() でコマンドが消える', afterDispose === 0, `${afterDispose} 件`);
+check('fiber.dispose() removes the commands', afterDispose === 0, `${afterDispose} items`);
 
-// --- 9. commands サービスが無いプロファイルでは何も起きない（任意依存） -------------
+// --- 9. Nothing happens in profiles without the commands service (optional dependency) ---
 const app3 = new cordis.Context();
 let fired3 = 0;
 const fiber3 = app3.inject(['commands'], () => {
   fired3 += 1;
 });
 await settle();
-check('サービスが無ければコールバックは走らない', fired3 === 0, `fired=${fired3}`);
-check('サービスが無くても Context は健全', app3.get('commands') === undefined);
+check('the callback does not run without the service', fired3 === 0, `fired=${fired3}`);
+check('the Context stays healthy without the service', app3.get('commands') === undefined);
 fiber3.dispose();
 serviceFiber.dispose();
 serviceFiber2.dispose();
 
-console.log(`\n結果: 成功 ${ok} / 失敗 ${fail}`);
+console.log(`\nResult: ${ok} passed / ${fail} failed`);
 process.exitCode = fail === 0 ? 0 : 1;

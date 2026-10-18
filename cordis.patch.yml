@@ -1,44 +1,44 @@
 # dsh-genspark — bundle patch layer
 #
-# このファイルがあることで、このパッケージは標準の profile bundle として扱われる:
+# This file makes the package treated as a standard profile bundle:
 #   dsh plugin --profile <p> add dsh-genspark
-# でインストール・マウントでき、cordis.patch.yml を手で編集する必要はない。
+# installs and mounts it, so cordis.patch.yml does not need to be edited by hand.
 #
-# row id はパッケージ名と一致させる（index.js が export する cordis `name` と同じ）。
+# The row id must match the package name (the same as the cordis `name` exported by index.js).
 - insert:
     - id: dsh-genspark
       name: 'dsh-genspark'
       config:
         enabled: true
-        # 副作用のある操作は「未承認なら実行しない」。ユーザーの承認後に
-        # genspark_run へ approve_write: true を付けて実行する。
+        # Operations with side effects are "not executed unless approved". After the user's approval,
+        # run genspark_run with approve_write: true.
         writeMode: approve
         timeoutMs: 600000
         maxOutputChars: 100000
         catalogTtlMs: 900000
-        # 子プロセスのランタイム（node.exe の絶対パス）。空なら自動探索する。
-        # DSH は Electron 上で動くため、探索で見つからない環境でのみ明示指定する。
+        # Runtime for the child process (absolute path to node.exe). If empty, it is searched automatically.
+        # Because DSH runs on Electron, specify it explicitly only in environments where the search fails.
         nodePath: ''
-        # 型付きツールとして登録するカテゴリ。
-        #   search … 検索・調査（6 ツール）
-        #   media  … 生成メディア（4 ツール）
-        #   social … ソーシャルメディア（X / Instagram / Reddit の検索・3 ツール）
-        # 空配列にすると genspark_run / genspark_tools / genspark_status だけになる。
+        # Categories registered as typed tools.
+        #   search … search and research (6 tools)
+        #   media  … generated media (4 tools)
+        #   social … social media (X / Instagram / Reddit search — 3 tools)
+        # An empty array leaves only genspark_run / genspark_tools / genspark_status.
         promotedCategories:
           - search
           - media
           - social
-        # コンポーザの `+` メニュー / `/` に Genspark のコマンドを並べる。
-        # コマンド自体はモデルメッセージを作らない（結果はモデル履歴の外に描画される）。
-        # 出すコマンドは promotedCategories に従う（genspark / genspark-tools / genspark-run は常時）。
+        # List Genspark commands in the composer's `+` menu / `/`.
+        # The commands themselves do not create model messages (results are drawn outside the model history).
+        # Which commands appear follows promotedCategories (genspark / genspark-tools / genspark-run are always present).
         commands: true
-        # 実行結果をエージェントの次のターンへ渡し、AI がチャットで要点と解釈を答えられるようにする。
-        # 画面のコマンド欄に出た内容をそのまま繰り返させないための引き継ぎ（トークンを消費する）。
-        # false にすると従来どおり結果はコマンド欄にだけ出て、モデル履歴は消費しない。
+        # Pass the execution result to the agent's next turn so the AI can answer the key points and interpretation in chat.
+        # This handoff exists so the AI does not simply repeat what appeared in the command pane (it consumes tokens).
+        # Setting it to false makes results appear only in the command pane, as before, without consuming model history.
         commandFollowup: true
-        # コマンドの完了を待つ上限（ミリ秒）。ホストはコマンドが終わるまで入力欄を凍結するため
-        # （phase = submitting / 実測で画像生成が 8 秒）、この時間でコマンドを先に完了させ、
-        # 結果は上の引き継ぎでチャットへ届ける。生成・解析系は受付メッセージを優先して
-        # この値に関わらず最大 150ms で返す。0 以下にすると従来どおり完了まで待つ。
+        # Upper bound for waiting for command completion (milliseconds). The host freezes the input field until the command finishes
+        # (phase = submitting / measured: image generation takes 8 seconds), so this duration lets the command complete first and
+        # delivers the result to chat via the handoff above. Generation and analysis tools prioritize the acknowledgment message and
+        # return within 150 ms regardless of this value. Setting it to 0 or less waits for completion as before.
         commandInlineWaitMs: 2500
         debug: false

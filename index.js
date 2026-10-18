@@ -1,20 +1,20 @@
 /**
- * dsh-genspark — DeepSeek Harness から Genspark の各種機能（検索・クロール・画像/動画/音声生成・
- * メディア理解・文字起こし・AI Drive・タスクエージェント・コネクタ・SNS・株価・電話 等、実測 327 ツール）を
- * 利用可能にする Cordis プラグイン。
+ * dsh-genspark — A Cordis plugin that makes Genspark's various features available from DeepSeek Harness
+ * (search, crawling, image/video/audio generation, media understanding, transcription, AI Drive, task agents,
+ * connectors, social media, stock prices, telephony, etc. — 327 tools as measured).
  *
- * 方式（実測に基づく確定仕様。docs/00-genspark-cli-spec-review.md を参照）:
- *   - 認証は既存の `gsk login`（~/.genspark-tool-cli/config.json）をそのまま利用する。
- *     プラグインは秘密情報を保持しない。
- *   - `@genspark/cli` を子プロセスとして起動する（shim ではなく node <dist/index.js>）。
- *   - stdin は閉じ、stdout/stderr は一時ファイルの fd へリダイレクトする（パイプは EPERM のため）。
- *   - GSK_NO_AUTO_UPDATE=1 を注入する（自己更新は終了コードを汚染するため切り離す）。
- *   - 引数は `--args-file` で一時 JSON を渡す（シェル引用を一切経由しない）。
- *   - 副作用のある操作は既定で未承認＝`--no-input`（サーバー呼び出しなしで拒否）。
- *     ユーザーの承認後に `approve_write: true` で `--yes` を渡す。
+ * Approach (the confirmed spec based on measurement; see docs/00-genspark-cli-spec-review.md):
+ *   - Authentication reuses the existing `gsk login` (~/.genspark-tool-cli/config.json).
+ *     The plugin does not hold any secrets.
+ *   - Launch `@genspark/cli` as a child process (not the shim, but node <dist/index.js>).
+ *   - Close stdin and redirect stdout/stderr to temp-file fds (pipes yield EPERM).
+ *   - Inject GSK_NO_AUTO_UPDATE=1 (self-update pollutes the exit code, so it is decoupled).
+ *   - Pass arguments via `--args-file` with a temporary JSON file (bypassing shell quoting entirely).
+ *   - Operations with side effects are unapproved by default = `--no-input` (rejected without a server call).
+ *     After the user's approval, pass `--yes` with `approve_write: true`.
  *
- * カテゴリ厳選の型付きツールは、このプラグインが提供する genspark_run / genspark_tools の上に
- * 後から追加できる（writeMode / enabled 等の設定は cordis.patch.yml から変更できる）。
+ * Category-curated typed tools can be added later on top of the genspark_run / genspark_tools provided
+ * by this plugin (settings such as writeMode / enabled can be changed from cordis.patch.yml).
  */
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { createCatalogCache } from './lib/catalog.js';
@@ -23,89 +23,89 @@ import { createRunner } from './lib/gsk-cli.js';
 import { buildPromotedTools, promotedSummary } from './lib/promoted.js';
 import { buildGensparkTools } from './lib/tools.js';
 
-/** Cordis プラグイン名（row id と一致させる）。 */
+/** Cordis plugin name (must match the row id). */
 export const name = 'dsh-genspark';
 
-/** ツールレジストリのみ必要（gsk の実行は子プロセスとファイルシステムだけで完結する）。 */
+/** Only the tool registry is needed (gsk execution completes with just a child process and the filesystem). */
 export const inject = ['tools'];
 
 /**
- * 設定スキーマ（cordis.patch.yml の config から与えられる）。
+ * Settings schema (given from the config in cordis.patch.yml).
  *
- * `@deepseek-ai/schemastery` はプロファイルに hoisted されている通常は解決できるが、
- * プラグインをシンボリックリンク/ジャンクションで参照した場合は実パス基準の解決になり
- * 見つからないことがある。スキーマが無くても生の config で動作するため、読み込みは任意化する。
+ * `@deepseek-ai/schemastery` is usually resolvable because it is hoisted into the profile, but when the plugin
+ * is referenced via a symlink/junction, resolution is based on the real path, so it may not be found.
+ * The plugin works with raw config even without a schema, so loading it is optional.
  */
 async function loadConfigSchema() {
   try {
     const z = (await import('@deepseek-ai/schemastery')).default;
     return z.object({
-      /** 総スイッチ。false でツール登録をすべて解除する（設定を変えた場合は再読込で反映）。 */
+      /** Master switch. false unregisters all tools (changing settings takes effect on reload). */
       enabled: z.boolean().default(true),
       /**
-       * @genspark/cli のエントリ（dist/index.js）の絶対パス。
-       * 空なら npm のグローバル導入先などを自動探索する。
+       * Absolute path to the @genspark/cli entry (dist/index.js).
+       * If empty, the npm global installation location etc. is searched automatically.
        */
       cliEntry: z.string().default(''),
       /**
-       * 子プロセスの実行に使う Node 実行ファイル（node.exe）の絶対パス。
-       * 空なら自動探索する。DSH は Electron 上で動くため process.execPath は Electron 本体で
-       * あり、そのまま使うと commander が Electron 用の argv 解釈に切り替わって
-       * `error: unknown command '<dist/index.js>'` で落ちる。実 Node を優先採用する。
+       * Absolute path to the Node executable (node.exe) used to run the child process.
+       * If empty, it is searched automatically. Because DSH runs on Electron, process.execPath is the Electron binary,
+       * and using it as is makes commander switch to Electron-style argv interpretation and fail with
+       * `error: unknown command '<dist/index.js>'`. A real Node is preferred.
        */
       nodePath: z.string().default(''),
       /**
-       * 副作用のある操作の扱い。
-       *   approve … 未承認なら --no-input（拒否）、approve_write=true で --yes（既定）
-       *   deny    … 常に --no-input（書き込みは一切実行しない）
-       *   allow   … CLI の既定（対話プロンプトは stdin が閉じているため拒否に倒れる）
+       * How to handle operations with side effects.
+       *   approve … unapproved means --no-input (rejected); approve_write=true means --yes (default)
+       *   deny    … always --no-input (no writes are ever executed)
+       *   allow   … CLI default (interactive prompts fall back to rejection because stdin is closed)
        */
       writeMode: z.union([z.const('approve'), z.const('deny'), z.const('allow')]).default('approve'),
-      /** gsk 1 回あたりのタイムアウト（ミリ秒）。長時間タスクは run_id を受け取って後から確認する。 */
+      /** Timeout for a single gsk run (milliseconds). For long-running tasks, receive a run_id and check later. */
       timeoutMs: z.number().default(600000),
-      /** ツール結果としてモデルへ返す最大文字数。 */
+      /** Maximum number of characters returned to the model as the tool result. */
       maxOutputChars: z.number().default(100000),
-      /** 一時ファイル（--args-file と stdout/stderr）を置くディレクトリ。空なら OS の一時領域。 */
+      /** Directory for temporary files (--args-file and stdout/stderr). If empty, the OS temp area is used. */
       tmpDir: z.string().default(''),
-      /** ツールカタログのキャッシュ有効期間（ミリ秒）。既定 15 分。 */
+      /** Cache lifetime for the tool catalog (milliseconds). Default 15 minutes. */
       catalogTtlMs: z.number().default(900000),
-      /** カタログ取得（gsk ls）のタイムアウト（ミリ秒）。 */
+      /** Timeout for catalog fetching (gsk ls) (milliseconds). */
       catalogTimeoutMs: z.number().default(120000),
-      /** 子プロセスの stderr をログへ出す。 */
+      /** Emit the child process's stderr to the log. */
       debug: z.boolean().default(false),
       /**
-       * 型付きツール（昇格ツール）として登録するカテゴリ。
-       *   search … 検索・調査（web_search / image_search / crawler / scholar_search / maps_search / summarize）
-       *   media  … 生成メディアとメディア解析（generate_image / generate_video / generate_audio / analyze_media）
-       *   social … ソーシャルメディア（x / instagram / reddit の検索）
-       * 空配列にすると genspark_run / genspark_tools / genspark_status の 3 つだけになる。
+       * Categories registered as typed tools (promoted tools).
+       *   search … search and research (web_search / image_search / crawler / scholar_search / maps_search / summarize)
+       *   media  … generated media and media analysis (generate_image / generate_video / generate_audio / analyze_media)
+       *   social … social media (x / instagram / reddit search)
+       * An empty array leaves only the 3 tools genspark_run / genspark_tools / genspark_status.
        */
       promotedCategories: z.array(z.string()).default(['search', 'media', 'social']),
       /**
-       * コンポーザの `+` メニュー / `/` から呼べるホストコマンドを登録する。
-       * コマンド自体はモデルメッセージを作らない（結果はモデル履歴の外に描画される）。
-       * どのコマンドを出すかは promotedCategories に従う（search / media を外せばそのカテゴリの
-       * コマンドも消える）。ホストに commands サービスが無い場合は何もしない（登録は任意依存）。
+       * Register host commands callable from the composer's `+` menu / `/`.
+       * The commands themselves do not create model messages (results are drawn outside the model history).
+       * Which commands appear follows promotedCategories (removing search / media also removes that category's
+       * commands). If the host has no commands service, nothing is done (registration is an optional dependency).
        */
       commands: z.boolean().default(true),
       /**
-       * コマンドの実行結果をエージェントの次のターンへ引き継ぎ、AI がチャットで解釈を返せるようにする。
+       * Carry the command execution result over to the agent's next turn so the AI can return an interpretation in chat.
        *
-       * ホストコマンドの結果は既定では画面のコマンド欄にしか出ないため、そのままでは
-       * 「検索結果の山」を AI が読めない。有効にすると実行後に `agent.followup` で結果を
-       * モデルへ渡し、要点と解釈を日本語で答えさせる（トークンは通常の入力と同じだけ消費する）。
-       * false にすると従来どおりモデル履歴を消費しない。
+       * By default, host command results appear only in the on-screen command pane, so as things stand
+       * the AI cannot read "the pile of search results". When enabled, after execution the result is passed
+       * to the model via `agent.followup`, which is asked to answer the key points and interpretation in Japanese
+       * (consuming the same amount of tokens as a normal input). Setting it to false does not consume model history, as before.
        */
       commandFollowup: z.boolean().default(true),
       /**
-       * コマンド handler の完了を待つ上限（ミリ秒）。
+       * Upper bound (milliseconds) for waiting on a command handler's completion.
        *
-       * ホストはコマンドが完了するまで送信トランザクション中（phase = submitting）で、
-       * その間コンポーザは編集不可・下書きは保持される。画像生成など 8 秒かかるコマンドでは
-       * その間ずっと入力欄が凍結するため、この時間でコマンドを先に完了させ、
-       * 結果は commandFollowup の引き継ぎ（チャット）で届ける。
-       * 生成・解析系は入力直後の受付メッセージを優先するため、この値に関わらず最大 150ms で返す。
-       * 0 以下にすると従来どおり完了まで待ち、結果をコマンド欄に出す。
+       * The host is in a submitting transaction (phase = submitting) until the command completes;
+       * during that time the composer is not editable and the draft is preserved. For commands that take 8 seconds,
+       * such as image generation, the input field stays frozen the whole time, so this duration lets the command complete first
+       * and delivers the result through the commandFollowup handoff (chat).
+       * Generation and analysis tools prioritize the immediate acknowledgment message, so they return within 150 ms
+       * regardless of this value. Setting it to 0 or less waits for completion as before and shows the result in the command pane.
        */
       commandInlineWaitMs: z.number().default(2500),
     });
@@ -125,7 +125,7 @@ export function apply(ctx, config) {
     try {
       ctx.logger?.debug?.(message);
     } catch {
-      /* ロガー未提供でも動作は継続する */
+      /* Keep working even if no logger is provided */
     }
   };
 
@@ -135,28 +135,28 @@ export function apply(ctx, config) {
   let fiber = null;
   let commandFiber = null;
   /**
-   * コマンド登録の結果。`genspark_status` に出す。
-   * メニューに行が出ないときの切り分け（サービスが無いのか / 登録で throw したのか）を
-   * ログを追わずに GUI 上で確認できるようにするためのもの。
+   * Result of command registration. Shown in `genspark_status`.
+   * This exists so that when no row appears in the menu, you can check in the GUI without chasing logs
+   * (whether the service is missing or registration threw).
    */
-  let commandState = '未登録（ホストに commands サービスが無い、または commands=false）';
+  let commandState = 'not registered (the host has no commands service, or commands=false)';
 
   /**
-   * ホストコマンド（`+` メニュー / `/`）を登録する。
+   * Register host commands (the `+` menu / `/`).
    *
-   * `commands` はデスクトップ GUI にしか無いサービスなので、必須 inject にはせず
-   * `ctx.inject(['commands'], …)`（＝任意依存）で待ち合わせる。サービスが現れなければ
-   * コールバックは実行されず、ツール側はそのまま動く。
+   * `commands` is a service that exists only in the desktop GUI, so it is not a required inject;
+   * instead we wait with `ctx.inject(['commands'], …)` (an optional dependency). If the service never appears,
+   * the callback does not run and the tools keep working as is.
    */
   const installCommands = () => {
     if (commandFiber !== null) return;
     if (getConfig().commands === false) {
-      commandState = '設定 commands=false のため無効';
+      commandState = 'disabled because the setting commands=false';
       return;
     }
     if (typeof ctx.inject !== 'function') {
-      commandState = 'このホストでは登録できません（ctx.inject が無い）';
-      log('[genspark] このホストには commands サービスが無いためコマンドは登録しません');
+      commandState = 'cannot register on this host (no ctx.inject)';
+      log('[genspark] this host has no commands service, so commands will not be registered');
       return;
     }
     try {
@@ -165,7 +165,7 @@ export function apply(ctx, config) {
           getConfig,
           runner,
           catalog,
-          // 添付（invocation.attachments）をホストパスへ解決するために ctx を渡す（attachments は任意依存）
+          // Pass ctx to resolve attachments (invocation.attachments) to host paths (attachments is an optional dependency)
           ctx: inner,
           log: (message) => {
             try {
@@ -181,20 +181,20 @@ export function apply(ctx, config) {
             inner.commands.register(command);
             registered += 1;
           } catch (error) {
-            inner.logger?.warn?.(`[genspark] コマンド ${command.name} の登録に失敗: ${String(error)}`);
+            inner.logger?.warn?.(`[genspark] failed to register command ${command.name}: ${String(error)}`);
           }
         }
         commandState =
           registered === commands.length
-            ? `${registered} 件を登録しました（/${commands.map((c) => c.name).join(' /')}）`
-            : `${commands.length} 件中 ${registered} 件のみ登録（失敗の詳細はログ）`;
-        // 登録できたかどうかは再起動後の切り分けで効くので info で出す（debug は既定で出ないことがある）
-        inner.logger?.info?.(`[genspark] コマンド ${commandState}`);
+            ? `registered ${registered} commands (/${commands.map((c) => c.name).join(' /')})`
+            : `registered only ${registered} of ${commands.length} commands (see the log for failure details)`;
+        // Whether registration succeeded is useful for diagnosis after a restart, so log it at info level (debug may not be emitted by default)
+        inner.logger?.info?.(`[genspark] commands: ${commandState}`);
       });
     } catch (error) {
       commandFiber = null;
-      commandState = `登録開始に失敗: ${String(error)}`;
-      ctx.logger?.warn?.(`[genspark] コマンド登録の開始に失敗: ${String(error)}`);
+      commandState = `failed to start registration: ${String(error)}`;
+      ctx.logger?.warn?.(`[genspark] failed to start command registration: ${String(error)}`);
     }
   };
 
@@ -202,9 +202,9 @@ export function apply(ctx, config) {
     if (commandFiber === null) return;
     const current = commandFiber;
     commandFiber = null;
-    commandState = '登録解除しました';
+    commandState = 'unregistered';
     Promise.resolve(current.dispose()).catch((error) => {
-      ctx.logger?.warn?.(`[genspark] コマンド解除に失敗: ${String(error)}`);
+      ctx.logger?.warn?.(`[genspark] failed to unregister commands: ${String(error)}`);
     });
   };
 
@@ -213,7 +213,7 @@ export function apply(ctx, config) {
     fiber = ctx.plugin({
       name: 'dsh-genspark:tools',
       apply(inner) {
-        // ツール登録は子 fiber のエフェクトなので、dispose で一括解除できる
+        // Tool registration is an effect of the child fiber, so dispose removes them all at once
         const tools = buildGensparkTools({
           defineTool,
           getConfig,
@@ -227,13 +227,13 @@ export function apply(ctx, config) {
             }
           },
           statusLines: (cfg) => [
-            `昇格ツール: ${promotedSummary(cfg?.promotedCategories)}`,
-            `コマンド: ${commandState}`,
+            `Promoted tools: ${promotedSummary(cfg?.promotedCategories)}`,
+            `Commands: ${commandState}`,
           ],
         });
         for (const tool of tools) inner.tools.register(tool);
 
-        // カテゴリ厳選の型付きツール（設定 promotedCategories で選択）
+        // Category-curated typed tools (selected by the promotedCategories setting)
         const promoted = buildPromotedTools({
           defineTool,
           getConfig,
@@ -249,7 +249,7 @@ export function apply(ctx, config) {
           },
         });
         for (const tool of promoted) inner.tools.register(tool);
-        log?.(`[genspark] 昇格ツール ${promoted.length} 件を登録しました`);
+        log?.(`[genspark] registered ${promoted.length} promoted tools`);
       },
     });
   };
@@ -259,7 +259,7 @@ export function apply(ctx, config) {
     const current = fiber;
     fiber = null;
     Promise.resolve(current.dispose()).catch((error) => {
-      ctx.logger?.warn?.(`[genspark] ツール解除に失敗: ${String(error)}`);
+      ctx.logger?.warn?.(`[genspark] failed to unregister tools: ${String(error)}`);
     });
   };
 

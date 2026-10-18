@@ -1,21 +1,19 @@
-// 「全部の機能でエラーを試す」ためのプリフライト。
+// Preflight for "try errors on every feature".
 //
-// 背景:
-//   実機で `/genspark-crawl` に URL でない文字列を渡したところ、エラー表示に続いて
-//   セッション形式 V4 の検証でターンごと失敗した（「このターンの実行に失敗しました
-//   format v4 message requires a producer-owned source kind」）。利用者からは
-//   「エラーハンドリングの処理が全く出来てません」「エラーテストは全部の機能で試しました？」
-//   との指摘を受けた。
+// Background:
+//   On real hardware, passing a non-URL string to `/genspark-crawl` produced an error display and then
+//   failed the whole turn in session-format V4 validation ("this turn failed to run:
+//   format v4 message requires a producer-owned source kind"). Users pointed out that
+//   "error handling is not working at all" and "did you try error tests on every feature?".
 //
-// このプリフライトは 14 コマンドすべてについて、起こりうる失敗の型を機械的に通し、
-//   1. handler が例外を投げない（必ず { kind: 'error', text } を返す）
-//   2. 文言が日本語で、生のスタックや英語の内部エラーを晒さない
-//   3. 事前検証で弾けるものは CLI を起動しない（＝課金しない）
-//   4. 引き継ぎメッセージが実物の V4 検証（assertV4RowAdmission）を通る
-// を確認する。実物の検証器を使うのが要点で、偽の agent だけの単体テストでは
-// 上記の実機不具合を見逃す。
+// This preflight mechanically runs the possible failure types for all 14 commands and checks that
+//   1. the handler never throws (it always returns { kind: 'error', text })
+//   2. the message is English and does not expose a raw stack
+//   3. things caught by pre-validation do not start the CLI (i.e. no charge)
+//   4. the follow-up message passes the real V4 validation (assertV4RowAdmission)
+// The point is to use the real validator; unit tests with only a fake agent miss the real-hardware bugs above.
 //
-// 使い方: node tests/preflight-error-sweep.mjs
+// Usage: node tests/preflight-error-sweep.mjs
 
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
@@ -53,6 +51,7 @@ const admit = (row) => {
 
 const settle = () => new Promise((done) => setTimeout(done, 0));
 const JAPANESE = /[\u3040-\u30ff\u4e00-\u9fff]/;
+const ENGLISH = /[A-Za-z]/;
 const RAW_STACK = /\n\s+at\s|node:internal|ERR_[A-Z_]+/;
 
 const FAKE_TOOLS = [
@@ -64,12 +63,12 @@ const FAKE_TOOLS = [
   },
 ];
 
-/** 失敗の型ごとに偽ランナーを作る。calls に CLI 呼び出しを記録する。 */
+/** Build a fake runner per failure type. CLI calls are recorded in calls. */
 function makeHarness(kind, calls, log) {
   const runner = {
     async runTool(toolName, toolArgs) {
       calls.push({ toolName, toolArgs });
-      if (kind === 'throw') throw new Error('spawn EPERM（テスト用）');
+      if (kind === 'throw') throw new Error('spawn EPERM (test)');
       if (kind === 'envelope') {
         return {
           code: 0,
@@ -109,7 +108,7 @@ const agent = {
 };
 const invocation = (rawInput) => ({ rawInput, commandId: 'c1', attachments: [], signal: undefined, agent });
 
-/** 1 回実行して、結果と引き継ぎメッセージを返す。 */
+/** Run once and return the result and follow-up message. */
 async function run(commands, name, input, calls, log) {
   const command = commands.find((item) => item.name === name);
   const before = seen.length;
@@ -131,154 +130,154 @@ const makeLog = () => {
   return log;
 };
 
-/** エラー結果として満たすべき条件をまとめて検査する。 */
+/** Check all conditions an error result must satisfy. */
 function checkError(label, run1, { expectCli = false } = {}) {
   const { result, message, cliCalls } = run1;
   const text = typeof result?.text === 'string' ? result.text : '';
-  check(`${label}: {kind:'error'}` , result?.kind === 'error', `kind=${result?.kind}`);
-  check(`${label}: 文言が日本語`, JAPANESE.test(text), text.slice(0, 90));
-  check(`${label}: 生のスタックを晒さない`, !RAW_STACK.test(text), text.slice(0, 90));
-  check(`${label}: 文言が空でない`, text.trim().length > 0);
-  const reason = message === undefined ? '引き継ぎが送られていない' : admit({ type: 'user/message', data: message });
-  check(`${label}: 引き継ぎが V4 検証を通る`, reason === null, reason ?? '');
+  check(`${label}: {kind:'error'}`, result?.kind === 'error', `kind=${result?.kind}`);
+  check(`${label}: message is English`, ENGLISH.test(text) && !JAPANESE.test(text), text.slice(0, 90));
+  check(`${label}: does not expose a raw stack`, !RAW_STACK.test(text), text.slice(0, 90));
+  check(`${label}: message is not empty`, text.trim().length > 0);
+  const reason = message === undefined ? 'follow-up was not sent' : admit({ type: 'user/message', data: message });
+  check(`${label}: follow-up passes V4 validation`, reason === null, reason ?? '');
   if (!expectCli) {
-    check(`${label}: CLI を起動しない（課金しない）`, cliCalls === 0, `${cliCalls} 回`);
+    check(`${label}: does not start the CLI (no charge)`, cliCalls === 0, `${cliCalls} times`);
   }
   return { text };
 }
 
-// ── 1. 14 コマンド × 3 種類の失敗（入力なし / ランナー例外 / エラー応答） ─────────────
-console.log('1. 14 コマンドのエラー経路');
+// ── 1. 14 commands × 3 failure types (no input / runner exception / error response) ──
+console.log('1. Error paths for all 14 commands');
 const names = makeHarness('ok', [], makeLog()).map((command) => command.name);
-check('コマンドは 14 件', names.length === 14, names.join(' '));
+check('there are 14 commands', names.length === 14, names.join(' '));
 
 for (const name of names) {
-  // (a) 入力なし（引数が要るコマンドはここで弾かれる）
+  // (a) No input (commands that need an argument are rejected here)
   {
     const calls = [];
     const log = makeLog();
     const commands = makeHarness('ok', calls, log);
     const out = await run(commands, name, '', calls, log);
     if (name === 'genspark') {
-      // /genspark は引数不要（接続状態の表示）なので、ここはエラーにならない
-      check(`${name}: 引数なしでも実行できる`, out.result?.kind === 'success', `kind=${out.result?.kind}`);
+      // /genspark takes no argument (connection status), so this is not an error
+      check(`${name}: runs without arguments`, out.result?.kind === 'success', `kind=${out.result?.kind}`);
     } else if (name === 'genspark-tools') {
-      // /genspark-tools も引数なしで「全ツール一覧」を返すのが正しい動作
-      check(`${name}: 引数なしで全ツールを一覧する`, out.result?.kind === 'success', `kind=${out.result?.kind}`);
+      // /genspark-tools correctly lists all tools without arguments too
+      check(`${name}: lists all tools without arguments`, out.result?.kind === 'success', `kind=${out.result?.kind}`);
     } else {
-      checkError(`${name}（入力なし）`, out);
+      checkError(`${name} (no input)`, out);
     }
   }
 
-  // (b) ランナーが例外を投げる
+  // (b) The runner throws
   {
     const calls = [];
     const log = makeLog();
     const commands = makeHarness('throw', calls, log);
-    const input = name === 'genspark-tools' ? '' : name === 'genspark-run' ? 'me' : 'テスト';
+    const input = name === 'genspark-tools' ? '' : name === 'genspark-run' ? 'me' : 'test';
     const out = await run(commands, name, input, calls, log);
     if (name === 'genspark' || name === 'genspark-tools') {
-      // /genspark は各項目を個別に握り潰し、/genspark-tools はカタログだけを使う（ランナー不要）
-      check(`${name}: ランナー例外でも結果を返す`, typeof out.result?.kind === 'string', `kind=${out.result?.kind}`);
+      // /genspark swallows each item individually, and /genspark-tools uses only the catalog (no runner needed)
+      check(`${name}: returns a result even when the runner throws`, typeof out.result?.kind === 'string', `kind=${out.result?.kind}`);
     } else {
-      checkError(`${name}（ランナー例外）`, out, { expectCli: true });
+      checkError(`${name} (runner exception)`, out, { expectCli: true });
     }
   }
 
-  // (c) ランナーがエラー応答を返す
+  // (c) The runner returns an error response
   {
     const calls = [];
     const log = makeLog();
     const commands = makeHarness('envelope', calls, log);
-    const input = name === 'genspark-tools' ? '' : name === 'genspark-run' ? 'me' : 'テスト';
+    const input = name === 'genspark-tools' ? '' : name === 'genspark-run' ? 'me' : 'test';
     const out = await run(commands, name, input, calls, log);
     if (name === 'genspark' || name === 'genspark-tools') {
-      check(`${name}: エラー応答でも結果を返す`, typeof out.result?.kind === 'string', `kind=${out.result?.kind}`);
+      check(`${name}: returns a result even on an error response`, typeof out.result?.kind === 'string', `kind=${out.result?.kind}`);
     } else {
-      checkError(`${name}（エラー応答）`, out, { expectCli: true });
+      checkError(`${name} (error response)`, out, { expectCli: true });
     }
   }
 }
 
-// ── 2. 事前検証で弾けるものは CLI を起動しない ────────────────────────────────────
-console.log('2. 事前検証（CLI を起動しないこと）');
+// ── 2. Things caught by pre-validation do not start the CLI ────────────────────────
+console.log('2. Pre-validation (the CLI is not started)');
 for (const [name, input, why] of [
-  ['genspark-crawl', 'これはテストです。昨日日本であった情報流出事件を教えてください', 'URL でもファイルでもない'],
-  ['genspark-summarize', 'これはURLではない質問文です', 'URL でもファイルでもない'],
-  ['genspark-run', 'web_search {"q":', '壊れた JSON'],
-  ['genspark-run', '存在しないツール名', '存在しないツール'],
-  ['genspark-search', '   ', '空白のみ'],
+  ['genspark-crawl', 'This is a test. Tell me about the data leak that happened yesterday.', 'not a URL or a file'],
+  ['genspark-summarize', 'This is a question, not a URL.', 'not a URL or a file'],
+  ['genspark-run', 'web_search {"q":', 'broken JSON'],
+  ['genspark-run', 'no_such_tool_xyz', 'nonexistent tool'],
+  ['genspark-search', '   ', 'whitespace only'],
 ]) {
   const calls = [];
   const log = makeLog();
   const commands = makeHarness('ok', calls, log);
   const out = await run(commands, name, input, calls, log);
-  checkError(`${name}（${why}）`, out);
+  checkError(`${name} (${why})`, out);
 }
 
-// ── 3. ランナーが「時間切れ」「解釈できない出力」を返す場合 ────────────────────────
-console.log('3. 時間切れ・解釈できない出力');
+// ── 3. When the runner returns a timeout or uninterpretable output ─────────────────
+console.log('3. Timeout and uninterpretable output');
 for (const kind of ['timeout', 'garbage']) {
   for (const name of ['genspark-search', 'genspark-analyze-media', 'genspark-run']) {
     const calls = [];
     const log = makeLog();
     const commands = makeHarness(kind, calls, log);
-    const input = name === 'genspark-run' ? 'me' : 'テスト';
+    const input = name === 'genspark-run' ? 'me' : 'test';
     const out = await run(commands, name, input, calls, log);
-    checkError(`${name}（${kind}）`, out, { expectCli: true });
+    checkError(`${name} (${kind})`, out, { expectCli: true });
   }
 }
 
-// ── 4. プラグイン側の想定外（getConfig が壊れている / handler が不正な値を返す） ────
-console.log('4. 想定外の内部エラー');
+// ── 4. Unexpected plugin-side conditions (broken getConfig / handler returns an invalid value) ──
+console.log('4. Unexpected internal errors');
 {
   const log = makeLog();
   const commands = buildGensparkCommands({
     getConfig: () => {
-      throw new Error('設定の読み込みに失敗（テスト用）');
+      throw new Error('failed to load the settings (test)');
     },
-    runner: { async runTool() { throw new Error('呼ばれないはず'); }, resolveEntry: () => null, resolveRuntime: () => ({ path: '', source: '' }) },
+    runner: { async runTool() { throw new Error('should not be called'); }, resolveEntry: () => null, resolveRuntime: () => ({ path: '', source: '' }) },
     catalog: { async load() { return { tools: [] }; } },
     log,
   });
   for (const name of ['genspark', 'genspark-search', 'genspark-run']) {
     const before = seen.length;
-    const result = await commands.find((item) => item.name === name).handler(invocation('テスト'));
+    const result = await commands.find((item) => item.name === name).handler(invocation('test'));
     await settle();
-    check(`${name}: getConfig が壊れていても例外を投げない`, result?.kind === 'error' || result?.kind === 'success', `kind=${result?.kind}`);
+    check(`${name}: does not throw even when getConfig is broken`, result?.kind === 'error' || result?.kind === 'success', `kind=${result?.kind}`);
     const message = seen[before];
     const reason = message === undefined ? null : admit({ type: 'user/message', data: message });
-    check(`${name}: そのときの引き継ぎも V4 検証を通る`, reason === null, reason ?? '');
+    check(`${name}: the follow-up also passes V4 validation`, reason === null, reason ?? '');
   }
-  check('想定外の内部エラーはログに残る', log.lines.some((line) => /設定の読み込みに失敗|例外が発生しました|不正な結果/.test(line)), log.lines.slice(0, 2).join(' / '));
+  check('unexpected internal errors are logged', log.lines.some((line) => /failed to load the settings|an exception occurred|returned an invalid result/.test(line)), log.lines.slice(0, 2).join(' / '));
 }
 {
   const log = makeLog();
   const deps = { getConfig: () => ({ commandFollowup: true }), runner: {}, catalog: {}, log };
-  // withFollowup の防御（例外 → 日本語エラー、不正な戻り値 → 日本語エラー）を直接確認する
+  // Check withFollowup's guards directly (exception → English error, invalid return value → English error)
   for (const [label, inner] of [
-    ['同期 throw', () => { throw new Error('内部エラー（テスト用）'); }],
-    ['非同期 reject', async () => { throw new Error('非同期エラー（テスト用）'); }],
-    ['undefined を返す', async () => undefined],
-    ['kind の無いオブジェクト', async () => ({ text: 'x' })],
-    ['文字列を返す', async () => 'だめな戻り値'],
+    ['synchronous throw', () => { throw new Error('internal error (test)'); }],
+    ['asynchronous reject', async () => { throw new Error('async error (test)'); }],
+    ['returns undefined', async () => undefined],
+    ['object without kind', async () => ({ text: 'x' })],
+    ['returns a string', async () => 'bad return value'],
   ]) {
     const guarded = withFollowup({ name: 'genspark-search', gsk: 'web_search', handler: inner }, deps);
     const before = seen.length;
-    const result = await guarded(invocation('テスト'));
+    const result = await guarded(invocation('test'));
     await settle();
     const text = typeof result?.text === 'string' ? result.text : '';
-    check(`想定外（${label}）: 例外を投げず日本語エラーを返す`, result?.kind === 'error' && JAPANESE.test(text) && !RAW_STACK.test(text), `${result?.kind} / ${text.slice(0, 70)}`);
+    check(`unexpected (${label}): returns an English error without throwing`, result?.kind === 'error' && ENGLISH.test(text) && !JAPANESE.test(text) && !RAW_STACK.test(text), `${result?.kind} / ${text.slice(0, 70)}`);
     const message = seen[before];
-    const reason = message === undefined ? '引き継ぎが送られていない' : admit({ type: 'user/message', data: message });
-    check(`想定外（${label}）: 引き継ぎも V4 検証を通る`, reason === null, reason ?? '');
+    const reason = message === undefined ? 'follow-up was not sent' : admit({ type: 'user/message', data: message });
+    check(`unexpected (${label}): the follow-up also passes V4 validation`, reason === null, reason ?? '');
   }
-  check('想定外の内部エラーはログに残る', log.lines.some((line) => /例外が発生しました|不正な結果/.test(line)), log.lines.slice(0, 2).join(' / '));
+  check('unexpected internal errors are logged', log.lines.some((line) => /an exception occurred|returned an invalid result/.test(line)), log.lines.slice(0, 2).join(' / '));
 }
 
-console.log(`\n結果: 成功 ${ok} / 失敗 ${fail}`);
+console.log(`\nResult: ${ok} passed / ${fail} failed`);
 if (fail > 0) {
-  console.log('\n失敗した検査:');
+  console.log('\nFailed checks:');
   for (const line of failures) console.log(`  ✘ ${line}`);
 }
 process.exitCode = fail === 0 ? 0 : 1;

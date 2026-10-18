@@ -1,6 +1,6 @@
 /**
- * 純ロジックの単体テスト（ホスト不要・ネットワーク不要）。
- * 実行: node --test tests/
+ * Unit tests for pure logic (no host or network required).
+ * Run: node --test tests/
  */
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -15,54 +15,54 @@ import { collectModels, formatModelList, kindOfInput } from '../lib/models.js';
 import { describeRun, isEnvelope, parseEnvelope, truncate } from '../lib/result.js';
 import { buildGensparkTools, resolveWritePolicy, schemaRequiresConfirmation } from '../lib/tools.js';
 
-// ── result.js ────────────────────────────────────────────────────────────────
+// -- result.js ----------------------------------------------------------------
 
-test('parseEnvelope: エンベロープ 1 行を取り出す', () => {
+test('parseEnvelope: extracts a single envelope line', () => {
   const { value } = parseEnvelope('{"status":"ok","message":"done","data":{"a":1}}\n');
   assert.equal(value.status, 'ok');
   assert.equal(value.data.a, 1);
   assert.equal(isEnvelope(value), true);
 });
 
-test('parseEnvelope: 進捗行が混ざっても JSON 行を拾う', () => {
+test('parseEnvelope: picks the JSON line even when progress lines are mixed in', () => {
   const stdout = '[INFO] something\n{"status":"ok","message":"","data":[1,2]}\n';
   const { value } = parseEnvelope(stdout);
   assert.deepEqual(value.data, [1, 2]);
 });
 
-test('parseEnvelope: カタログ形式（エンベロープ無し）も読める', () => {
+test('parseEnvelope: also reads the catalog shape (no envelope)', () => {
   const { value } = parseEnvelope('{"tools":[{"name":"web_search"}],"features":{}}');
   assert.equal(isEnvelope(value), false);
   assert.equal(value.tools.length, 1);
 });
 
-test('parseEnvelope: JSON が無ければ undefined', () => {
+test('parseEnvelope: undefined when there is no JSON', () => {
   const { value, raw } = parseEnvelope('not json at all');
   assert.equal(value, undefined);
   assert.match(raw, /not json/);
 });
 
-test('describeRun: ok エンベロープは data を整形して返す', () => {
+test('describeRun: an ok envelope formats and returns data', () => {
   const result = { code: 0, stdout: '{"status":"ok","message":"","data":{"answer":42}}', stderr: '' };
   const described = describeRun(result, { tool: 'x' });
   assert.equal(described.ok, true);
   assert.match(described.text, /"answer": 42/);
 });
 
-test('describeRun: 終了コードが異常でもエンベロープが ok なら成功扱い（自動更新の汚染対策）', () => {
+test('describeRun: treats it as success when the envelope is ok even if the exit code is abnormal (guards against auto-update pollution)', () => {
   const result = { code: 3221226505, stdout: '{"status":"ok","message":"","data":"1.14.0"}', stderr: 'Assertion failed: ...' };
   assert.equal(describeRun(result, { tool: '--version' }).ok, true);
 });
 
-test('describeRun: audio_transcribe は full_text が空でも segments を本文として出す（words は出さない）', () => {
+test('describeRun: audio_transcribe outputs segments as the body even when full_text is empty (does not output words)', () => {
   const data = {
     'https://www.genspark.ai/api/files/s/YLfVr5A0': {
       status: 'completed',
       audio_url: 'https://www.genspark.ai/api/files/s/YLfVr5A0',
       language: 'japanese',
       full_text: '',
-      segments: '0.00-5.52: 霊族こそメスの定め! ブラックウィング、バンザーイ!',
-      words: 'w_5d8194af 0.00-0.66: 霊\nw_60036a34 0.66-0.84: 族\nw_7a0c911e 0.84-1.16: こ',
+      segments: '0.00-5.52: Hello from the transcript',
+      words: 'w_5d8194af 0.00-0.66: Hel\nw_60036a34 0.66-0.84: lo\nw_7a0c911e 0.84-1.16: fro',
       entities: null,
       analysis_result_url: 'https://www.genspark.ai/api/files/s/sYQFNffF',
       words_url: 'https://www.genspark.ai/api/files/s/PlRrf7Pu',
@@ -71,36 +71,36 @@ test('describeRun: audio_transcribe は full_text が空でも segments を本�
   const result = { code: 0, stdout: JSON.stringify({ status: 'ok', message: 'success', data }), stderr: '' };
   const described = describeRun(result, { tool: 'audio_transcribe' });
   assert.equal(described.ok, true);
-  assert.match(described.text, /霊族こそメスの定め! ブラックウィング、バンザーイ!/);
+  assert.match(described.text, /Hello from the transcript/);
   assert.match(described.text, /language: japanese/);
   assert.match(described.text, /analysis_result_url: https:\/\/www\.genspark\.ai\/api\/files\/s\/sYQFNffF/);
-  assert.equal(/w_5d8194af/.test(described.text), false, 'words（単語別タイムスタンプ）が出ている');
-  assert.equal(/full_text/.test(described.text), false, 'JSON 全体が出ている');
+  assert.equal(/w_5d8194af/.test(described.text), false, 'words (word-level timestamps) are shown');
+  assert.equal(/full_text/.test(described.text), false, 'the whole JSON is shown');
 });
 
-test('describeRun: full_text があれば segments より優先し、segments 配列も読む', () => {
+test('describeRun: prefers full_text over segments and also reads a segments array', () => {
   const withFullText = {
     status: 'completed',
-    full_text: '全文のテキスト',
-    segments: '0.00-1.00: 部分',
+    full_text: 'Full text body',
+    segments: '0.00-1.00: partial',
   };
   const first = describeRun({ code: 0, stdout: JSON.stringify({ status: 'ok', data: withFullText }), stderr: '' }, {});
-  assert.match(first.text, /全文のテキスト/);
-  assert.equal(/部分/.test(first.text), false, 'segments が重複して出ている');
+  assert.match(first.text, /Full text body/);
+  assert.equal(/partial/.test(first.text), false, 'segments are shown redundantly');
 
   const withArray = {
     full_text: '',
     segments: [
-      { start: 0, end: 1.5, text: '最初の文' },
-      { start: 1.5, end: 3, text: '次の文' },
+      { start: 0, end: 1.5, text: 'First sentence' },
+      { start: 1.5, end: 3, text: 'Second sentence' },
     ],
   };
   const second = describeRun({ code: 0, stdout: JSON.stringify({ status: 'ok', data: withArray }), stderr: '' }, {});
-  assert.match(second.text, /0\.00-1\.50: 最初の文/);
-  assert.match(second.text, /1\.50-3\.00: 次の文/);
+  assert.match(second.text, /0\.00-1\.50: First sentence/);
+  assert.match(second.text, /1\.50-3\.00: Second sentence/);
 });
 
-test('describeRun: error エンベロープは error_code と指示を含める', () => {
+test('describeRun: an error envelope includes error_code and instruction', () => {
   const result = {
     code: 1,
     stdout: JSON.stringify({ status: 'error', message: 'boom', error_code: 'E_X', retry_after: 30, instruction_for_agent: 'retry later' }),
@@ -114,34 +114,34 @@ test('describeRun: error エンベロープは error_code と指示を含める'
   assert.match(described.text, /retry later/);
 });
 
-test('describeRun: 認証エラーはログイン手順を案内する', () => {
+test('describeRun: an authentication error explains the login steps', () => {
   const result = { code: 1, stdout: '', stderr: '[ERROR] API key is required. Provide it via:' };
   const described = describeRun(result, { tool: 'web_search' });
   assert.equal(described.ok, false);
   assert.match(described.text, /gsk login/);
 });
 
-test('describeRun: exit code 2 は確認未承認として案内する', () => {
+test('describeRun: exit code 2 explains that confirmation was not approved', () => {
   const result = { code: 2, stdout: '', stderr: '' };
   const described = describeRun(result, { tool: 'slack' });
-  assert.match(described.text, /承認/);
+  assert.match(described.text, /requires confirmation/);
   assert.match(described.text, /approve_write/);
 });
 
-test('describeRun: タイムアウトは run_id 経由を案内する', () => {
+test('describeRun: a timeout explains using the run_id path', () => {
   const described = describeRun({ code: null, stdout: '', stderr: '', timedOut: true }, { tool: 'create_task' });
   assert.equal(described.ok, false);
   assert.match(described.text, /task_status/);
 });
 
-test('truncate: 上限を超えたら切り詰める', () => {
+test('truncate: truncates when over the limit', () => {
   const { text, truncated, originalLength } = truncate('a'.repeat(50), 10);
   assert.equal(truncated, true);
   assert.equal(originalLength, 50);
-  assert.match(text, /残り 40 文字/);
+  assert.match(text, /40 more characters omitted/);
 });
 
-// ── catalog.js ───────────────────────────────────────────────────────────────
+// -- catalog.js ---------------------------------------------------------------
 
 const FIXTURE = {
   tools: [
@@ -171,14 +171,14 @@ const FIXTURE = {
   features: { interactive_confirm: true },
 };
 
-test('groupOf: cli.path を最優先し、次に group、無ければ ungrouped', () => {
+test('groupOf: prefers cli.path, then group, then ungrouped', () => {
   assert.equal(groupOf({ cli: { path: ['task', 'create'], group: 'x' } }), 'task create');
   assert.equal(groupOf({ cli: { group: 'email' } }), 'email');
   assert.equal(groupOf({ cli: {} }), '(ungrouped)');
 });
 
-test('filterTools: keyword は名前・エイリアス・説明・グループ・action 名を対象に AND 検索する', () => {
-  // "search" は web_search（名前）と slack（action: search）の両方に当たる
+test('filterTools: keyword searches names, aliases, descriptions, groups, and action names with AND', () => {
+  // "search" matches both web_search (name) and slack (action: search)
   assert.deepEqual(
     filterTools(FIXTURE.tools, { keyword: 'search' }).map((t) => t.name).sort(),
     ['slack', 'web_search'],
@@ -187,56 +187,56 @@ test('filterTools: keyword は名前・エイリアス・説明・グループ�
   assert.equal(filterTools(FIXTURE.tools, { group: 'email' })[0].name, 'gmail');
 });
 
-test('summarizeCatalog: 引数なしではグループ別件数と主要ツールを返す', () => {
+test('summarizeCatalog: with no arguments returns group counts and key tools', () => {
   const text = summarizeCatalog(FIXTURE, {});
-  assert.match(text, /全 3 ツール/);
+  assert.match(text, /3 tools in total/);
   assert.match(text, /web_search/);
 });
 
-test('describeCatalogFull: 引数スキーマと action 一覧を返す', () => {
+test('describeCatalogFull: returns the argument schema and action list', () => {
   const text = describeCatalogFull(FIXTURE, { keyword: 'slack' });
-  assert.match(text, /action \(必須\)/);
-  assert.match(text, /send \(要承認\/対話必須\)/);
+  assert.match(text, /action \(required\)/);
+  assert.match(text, /send \(approval required\/interactive only\)/);
   assert.match(text, /enum=\[send, search\]/);
 });
 
-test('groupSummary: 件数の降順', () => {
+test('groupSummary: descending by count', () => {
   const summary = groupSummary(FIXTURE.tools);
   assert.deepEqual(summary.map(([name]) => name), ['(ungrouped)', 'email']);
 });
 
-// ── tools.js（ホスト非依存の組み立て）───────────────────────────────────────
+// -- tools.js (host-independent assembly) -------------------------------------
 
-test('resolveWritePolicy: 既定は未承認＝--no-input、承認時のみ --yes', () => {
+test('resolveWritePolicy: defaults to unapproved = --no-input, only --yes when approved', () => {
   assert.deepEqual(resolveWritePolicy({}, false).flags, ['--no-input']);
   assert.deepEqual(resolveWritePolicy({}, true).flags, ['--yes']);
   assert.deepEqual(resolveWritePolicy({ writeMode: 'deny' }, true).flags, ['--no-input']);
   assert.deepEqual(resolveWritePolicy({ writeMode: 'allow' }, false).flags, []);
 });
 
-test('schemaRequiresConfirmation: action 単位の確認要否を判定する', () => {
+test('schemaRequiresConfirmation: decides whether confirmation is required per action', () => {
   const slack = FIXTURE.tools[1];
   assert.equal(schemaRequiresConfirmation(slack, { action: 'send' }), true);
   assert.equal(schemaRequiresConfirmation(slack, { action: 'search' }), false);
   assert.equal(schemaRequiresConfirmation({ cli: { requires_confirmation: true } }, {}), true);
 });
 
-test('buildGensparkTools: 4 つのツール定義を返し、parameters が DSL 仕様に沿う', () => {
+test('buildGensparkTools: returns 4 tool definitions whose parameters match the DSL spec', () => {
   const defineTool = (spec) => spec;
   const tools = buildGensparkTools({ defineTool, getConfig: () => ({}), runner: {}, catalog: {} });
   assert.deepEqual(tools.map((t) => t.name), ['genspark_run', 'genspark_tools', 'genspark_models', 'genspark_status']);
   const run = tools[0];
   assert.equal(run.parameters.tool.required, true);
-  assert.equal(run.parameters.args.type, 'json'); // 任意 JSON を受理する annotation-only schema
+  assert.equal(run.parameters.args.type, 'json'); // annotation-only schema that accepts arbitrary JSON
   assert.equal(run.parameters.approve_write.type, 'boolean');
   assert.equal(typeof run.execute, 'function');
-  // 生成モデル一覧は kind で絞れる（enum は画像/動画/音声/文字起こし）
+  // The generation model list can be narrowed by kind (enum is image/video/audio/transcribe)
   const models = tools[2];
   assert.deepEqual(models.parameters.kind.enum, ['image', 'video', 'audio', 'transcribe']);
   assert.equal(models.parameters.kind.required, undefined);
 });
 
-test('createCatalogCache: ls の出力を解析してキャッシュする', async () => {
+test('createCatalogCache: parses the output of ls and caches it', async () => {
   const calls = [];
   const runner = {
     async run(argv) {
@@ -250,23 +250,23 @@ test('createCatalogCache: ls の出力を解析してキャッシュする', asy
   assert.equal(first.cached, false);
   const second = await cache.load(runner, {});
   assert.equal(second.cached, true);
-  assert.equal(calls.length, 1); // 2 回目はキャッシュ
+  assert.equal(calls.length, 1); // the second call is cached
   await cache.load(runner, { refresh: true });
   assert.equal(calls.length, 2);
   assert.deepEqual(calls[1], ['--output', 'json', '--refresh', 'ls']);
 });
 
-test('createCatalogCache: 解析できない出力は GSK_CATALOG_UNAVAILABLE で失敗する', async () => {
+test('createCatalogCache: fails with GSK_CATALOG_UNAVAILABLE when the output cannot be parsed', async () => {
   const runner = { async run() {
     return { code: 1, stdout: '', stderr: '[ERROR] API key is required.' };
   } };
   const cache = createCatalogCache({ getConfig: () => ({}) });
-  await assert.rejects(() => cache.load(runner, {}), /カタログを取得できませんでした/);
+  await assert.rejects(() => cache.load(runner, {}), /Could not retrieve the catalog/);
 });
 
-// ── 一時ディレクトリ（DSH 実機で --args-file が ENOENT になった不具合の回帰テスト） ──
+// -- Temporary directory (regression test for --args-file ENOENT on the real DSH host) --
 
-test('resolveTmpRoot: 空文字・未設定・空白は OS の一時領域（絶対パス）へ倒す', () => {
+test('resolveTmpRoot: empty string, unset, and whitespace fall back to the OS temp area (absolute path)', () => {
   assert.equal(resolveTmpRoot(''), tmpdir());
   assert.equal(resolveTmpRoot(undefined), tmpdir());
   assert.equal(resolveTmpRoot(null), tmpdir());
@@ -275,26 +275,26 @@ test('resolveTmpRoot: 空文字・未設定・空白は OS の一時領域（絶
   assert.equal(isAbsolute(tmpdir()), true);
 });
 
-test('resolveTmpRoot: 相対指定は絶対パスへ正規化する（子プロセスの cwd に依存させない）', () => {
+test('resolveTmpRoot: relative input is normalized to an absolute path (not dependent on the child process cwd)', () => {
   const out = resolveTmpRoot('tmp/genspark');
   assert.equal(isAbsolute(out), true);
   assert.equal(out, resolve('tmp/genspark'));
   assert.equal(resolveTmpRoot('C:\\Temp\\genspark'), 'C:\\Temp\\genspark');
 });
 
-test('writeArgsFile: 相対ディレクトリを渡しても絶対パスを返し、内容は JSON として読める', async () => {
+test('writeArgsFile: returns an absolute path even for a relative directory, and the content is readable as JSON', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-genspark-args-unit-'));
   try {
     const rel = relative(process.cwd(), dir);
-    const path = await writeArgsFile(rel, { q: 'テスト', n: 2 });
+    const path = await writeArgsFile(rel, { q: 'test', n: 2 });
     assert.equal(isAbsolute(path), true);
-    assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), { q: 'テスト', n: 2 });
+    assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), { q: 'test', n: 2 });
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test('describeRun: --args-file の ENOENT を「引数名の誤り」と誤診しない', () => {
+test('describeRun: does not misdiagnose --args-file ENOENT as a wrong argument name', () => {
   const result = {
     code: 1,
     ok: false,
@@ -303,29 +303,29 @@ test('describeRun: --args-file の ENOENT を「引数名の誤り」と誤診�
   };
   const described = describeRun(result, { tool: 'web_search' });
   assert.equal(described.ok, false);
-  assert.match(described.text, /引数ファイルを Genspark CLI が読み取れませんでした/);
-  assert.doesNotMatch(described.text, /引数の名前が Genspark 側のスキーマと一致しません/);
+  assert.match(described.text, /could not read the arguments file/i);
+  assert.doesNotMatch(described.text, /argument names do not match the Genspark-side schema/i);
 });
 
-test('describeRun: is not a param は従来どおり引数名の誤りとして案内する', () => {
+test('describeRun: "is not a param" still explains a wrong argument name as before', () => {
   const described = describeRun(
     { code: 1, ok: false, stdout: '', stderr: '[ERROR] --args-file: "freshness" is not a param' },
     { tool: 'web_search' },
   );
-  assert.match(described.text, /引数の名前が Genspark 側のスキーマと一致しません/);
-  assert.match(described.text, /サーバーは呼び出されていません/);
+  assert.match(described.text, /argument names do not match the Genspark-side schema/i);
+  assert.match(described.text, /server was not called/i);
 });
 
-/** 生成モデルの enum を持つ最小カタログ。 */
+/** Minimal catalog with the enum of generation models. */
 const MODEL_FIXTURE = {
   tools: [
     { name: 'image_generation', parameters: { properties: { model: { enum: ['img-1', 'img-2'] } } } },
     { name: 'video_generation', parameters: { properties: { model: { enum: ['kling/v3'] } } } },
-    { name: 'audio_generation', parameters: { properties: {} } }, // model 引数なし → 一覧に出ない
+    { name: 'audio_generation', parameters: { properties: {} } }, // no model argument -> not listed
   ],
 };
 
-test('collectModels: カタログの model enum だけを拾い、model 引数の無いツールは落とす', () => {
+test('collectModels: picks only the model enums from the catalog and drops tools without a model argument', () => {
   const entries = collectModels(MODEL_FIXTURE);
   assert.deepEqual(entries.map((entry) => entry.kind), ['image', 'video']);
   assert.deepEqual(entries[0].ids, ['img-1', 'img-2']);
@@ -334,48 +334,48 @@ test('collectModels: カタログの model enum だけを拾い、model 引数�
   assert.deepEqual(collectModels({ tools: [] }), []);
 });
 
-test('formatModelList: kind と部分一致で絞れ、ヒント行が付く', () => {
+test('formatModelList: narrows by kind and substring, and appends a hint line', () => {
   const entries = collectModels(MODEL_FIXTURE);
   assert.match(formatModelList(entries, { kind: 'video' }), /kling\/v3/);
   assert.doesNotMatch(formatModelList(entries, { kind: 'video' }), /img-1/);
   assert.match(formatModelList(entries, { filter: 'img-' }), /img-1 \/ img-2/);
   assert.match(formatModelList(entries), /get_model_info/);
-  assert.match(formatModelList(entries, { filter: 'zzz' }), /該当するモデルが見つかりませんでした/);
+  assert.match(formatModelList(entries, { filter: 'zzz' }), /No matching models were found/);
 });
 
-test('kindOfInput: 日本語・別名を受け付け、未知語は undefined', () => {
-  assert.equal(kindOfInput('動画'), 'video');
-  assert.equal(kindOfInput('画像'), 'image');
-  assert.equal(kindOfInput(' 音声 '), 'audio');
-  assert.equal(kindOfInput('文字起こし'), 'transcribe');
+test('kindOfInput: accepts Japanese and aliases, undefined for unknown words', () => {
+  assert.equal(kindOfInput('\u52d5\u753b'), 'video');
+  assert.equal(kindOfInput('\u753b\u50cf'), 'image');
+  assert.equal(kindOfInput(' \u97f3\u58f0 '), 'audio');
+  assert.equal(kindOfInput('\u6587\u5b57\u8d77\u3053\u3057'), 'transcribe');
   assert.equal(kindOfInput('kling'), undefined);
   assert.equal(kindOfInput(''), undefined);
 });
 
-// ── guard.js（生成コマンドの誤爆ガード） ──────────────────────────────────────
+// -- guard.js (false-positive guard for generation commands) ------------------
 
-test('detectMetaIntent: モデル一覧の依頼を拾う', () => {
-  assert.deepEqual(detectMetaIntent('動画モデルのリストください'), { kind: 'models' });
-  assert.deepEqual(detectMetaIntent('動画モデルの一覧'), { kind: 'models' });
-  assert.deepEqual(detectMetaIntent('使える動画モデルを教えて'), { kind: 'models' });
-  assert.deepEqual(detectMetaIntent('動画モデル'), { kind: 'models' });
+test('detectMetaIntent: picks up requests for a model list', () => {
+  assert.deepEqual(detectMetaIntent('\u52d5\u753b\u30e2\u30c7\u30eb\u306e\u30ea\u30b9\u30c8\u304f\u3060\u3055\u3044'), { kind: 'models' });
+  assert.deepEqual(detectMetaIntent('\u52d5\u753b\u30e2\u30c7\u30eb\u306e\u4e00\u89a7'), { kind: 'models' });
+  assert.deepEqual(detectMetaIntent('\u4f7f\u3048\u308b\u52d5\u753b\u30e2\u30c7\u30eb\u3092\u6559\u3048\u3066'), { kind: 'models' });
+  assert.deepEqual(detectMetaIntent('\u52d5\u753b\u30e2\u30c7\u30eb'), { kind: 'models' });
   assert.deepEqual(detectMetaIntent('which video models are available'), { kind: 'models' });
 });
 
-test('detectMetaIntent: 通常の生成プロンプトは拾わない', () => {
-  assert.equal(detectMetaIntent('モデルのような女性が歩く動画'), undefined);
-  assert.equal(detectMetaIntent('モデルの写真を作ってください'), undefined);
-  assert.equal(detectMetaIntent('桜の花びらが舞う 5 秒'), undefined);
+test('detectMetaIntent: does not pick up ordinary generation prompts', () => {
+  assert.equal(detectMetaIntent('\u30e2\u30c7\u30eb\u306e\u3088\u3046\u306a\u5973\u6027\u304c\u6b69\u304f\u52d5\u753b'), undefined);
+  assert.equal(detectMetaIntent('\u30e2\u30c7\u30eb\u306e\u5199\u771f\u3092\u4f5c\u3063\u3066\u304f\u3060\u3055\u3044'), undefined);
+  assert.equal(detectMetaIntent('\u685c\u306e\u82b1\u3073\u3089\u304c\u821e\u3046 5 \u79d2'), undefined);
   assert.equal(detectMetaIntent(''), undefined);
 });
 
-test('detectMetaIntent: 使い方の依頼は usage として拾う', () => {
-  assert.deepEqual(detectMetaIntent('使い方'), { kind: 'usage' });
+test('detectMetaIntent: picks up usage requests as usage', () => {
+  assert.deepEqual(detectMetaIntent('\u4f7f\u3044\u65b9'), { kind: 'usage' });
   assert.deepEqual(detectMetaIntent('help'), { kind: 'usage' });
-  assert.deepEqual(detectMetaIntent('何ができる？'), { kind: 'usage' });
+  assert.deepEqual(detectMetaIntent('\u4f55\u304c\u3067\u304d\u308b\uff1f'), { kind: 'usage' });
 });
 
-test('isGenerationTool / modelKindOfTool: 生成系ツールだけを対象にする', () => {
+test('isGenerationTool / modelKindOfTool: targets only generation tools', () => {
   assert.equal(isGenerationTool('video_generation'), true);
   assert.equal(isGenerationTool('image_generation'), true);
   assert.equal(isGenerationTool('audio_generation'), true);

@@ -1,195 +1,206 @@
 # dsh-genspark
 
-DeepSeek Harness（DSH）から **Genspark** の AI 機能を使えるようにするプラグインです。
-検索・調査・画像/動画/音声の生成・メディア解析・SNS（X / Instagram / Reddit）の検索を、
-コンポーザから `/genspark-*` コマンドで呼び出せます。
+A plugin that brings **Genspark**'s AI capabilities into DeepSeek Harness (DSH).
+Search, research, image/video/audio generation, media analysis, and social network search
+(X / Instagram / Reddit) can all be called from the composer with `/genspark-*` commands.
 
-## はじめかた
+Japanese: [README_ja.md](README_ja.md)
 
-### 1. CLI を入れてログインする
+## Getting started
+
+### 1. Install the CLI and log in
 
 ```powershell
 npm install -g @genspark/cli
-gsk login      # ブラウザが開く → Genspark アカウントで承認
-gsk me         # メール・プラン・残クレジットが出れば成功
+gsk login      # opens the browser → approve with your Genspark account
+gsk me         # success if your email, plan, and remaining credits are shown
 ```
 
-- 認証情報は `~/.genspark-tool-cli/config.json` に保存されます。**このプラグインは秘密情報を保持しません**
-  （CLI が保存したものを使うだけです）。
-- ブラウザを使えない環境（CI・サーバー）では API キーでも認証できます。
+- Credentials are stored in `~/.genspark-tool-cli/config.json`. **This plugin never holds secrets**
+  (it only uses what the CLI has saved).
+- On machines without a browser (CI, servers), you can authenticate with an API key instead.
 
   ```powershell
-  $env:GSK_API_KEY = "gsk_..."   # Genspark の API キー
+  $env:GSK_API_KEY = "gsk_..."   # your Genspark API key
   ```
 
-- アカウントを変えるときは `gsk logout` → `gsk login`。
-- ログイン状態は `/genspark`（または `gsk me`）でいつでも確認できます。
+- To switch accounts, run `gsk logout` → `gsk login`.
+- You can check the login state at any time with `/genspark` (or `gsk me`).
 
-### 2. プラグインを配置する
+### 2. Install the plugin into a profile
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install-to-profile.ps1 -Profile "$env:USERPROFILE\.dsh\profiles\web" -Sync
 ```
 
-desktop アプリ側にも入れる場合は `...\.dsh\profiles\desktop` に対して同じコマンドを実行します。
+To install it into the desktop app as well, run the same command against `...\.dsh\profiles\desktop`.
 
-### 3. DSH を再起動する
+### 3. Restart DSH
 
-**ページのリロードでは反映されません**（プラグインはサーバー起動時に一度だけ読み込まれます）。
-再起動後に `/genspark` を実行して、アカウントと残クレジットが出れば準備完了です。
+**Reloading the page is not enough** (the plugin is loaded only once, when the server starts).
+After restarting, run `/genspark`; if your account and remaining credits appear, you are ready to go.
 
-## コマンド一覧
+## Commands
 
-コンポーザの `+` メニュー、または行頭の `/` から選べます。
-（`+` で開くときは**入力欄を空**にしてください。引数付きコマンドは空のときだけ候補に出ます）
+Available from the composer's `+` menu, or by typing `/` at the start of a line.
+(When opening the menu with `+`, **leave the input field empty** — commands that take arguments
+only appear as suggestions when it is empty.)
 
-### 調べる
+### Search and research
 
-| コマンド | できること | 例 |
+| Command | What it does | Example |
 |---|---|---|
-| `/genspark` | 接続状態・アカウント・残クレジット | `/genspark` |
-| `/genspark-search` | Web 検索 | `/genspark-search DeepSeek V4 の評判` |
-| `/genspark-image-search` | 画像検索 | `/genspark-image-search 桜 満開` |
-| `/genspark-crawl` | ページ本文を読み取る | `/genspark-crawl https://example.com/article` |
-| `/genspark-scholar` | 学術論文を探す | `/genspark-scholar diffusion model speech` |
-| `/genspark-maps` | 地図・場所を調べる | `/genspark-maps 東京駅周辺のカフェ` |
-| `/genspark-summarize` | 長い文書を要約する（PDF 可） | `/genspark-summarize <URL> 要点は何？` |
+| `/genspark` | Connection status, account, remaining credits | `/genspark` |
+| `/genspark-search` | Web search | `/genspark-search DeepSeek V4 reviews` |
+| `/genspark-image-search` | Image search | `/genspark-image-search cherry blossoms in full bloom` |
+| `/genspark-crawl` | Read the body of a page | `/genspark-crawl https://example.com/article` |
+| `/genspark-scholar` | Find academic papers | `/genspark-scholar diffusion model speech` |
+| `/genspark-maps` | Look up maps and places | `/genspark-maps cafes near Tokyo Station` |
+| `/genspark-summarize` | Summarize a long document (PDF supported) | `/genspark-summarize <URL> What are the key points?` |
 
-### 作る
+### Create
 
-| コマンド | できること | 例 |
+| Command | What it does | Example |
 |---|---|---|
-| `/genspark-image` | 画像を生成する | `/genspark-image 夕焼けの富士山` |
-| `/genspark-video` | 動画を生成する | `/genspark-video 桜の花びらが舞う 5 秒` |
-| `/genspark-audio` | 音声・音楽を生成する | `/genspark-audio おはようございます` |
+| `/genspark-image` | Generate an image | `/genspark-image Mount Fuji at sunset` |
+| `/genspark-video` | Generate a video | `/genspark-video cherry petals falling, 5 seconds` |
+| `/genspark-audio` | Generate speech or music | `/genspark-audio Good morning` |
 
-成果物は `<作業ディレクトリ>/genspark-out/` に保存され、保存先とサイズが表示されます。
+Artifacts are saved to `<working directory>/genspark-out/`, and the save path and size are displayed.
 
-待ち時間の目安（実測）: 画像 15〜40 秒 / 音声 30〜60 秒 / **動画 1〜2 分**（5 秒・720p で約 50 秒。
-長い動画はさらにかかります）。生成・解析系は入力直後に「Genspark に送信中です」と返り、
-結果はこのあとチャットに届きます。
+Typical wait times (measured): images 15–40 s / audio 30–60 s / **video 1–2 min** (about 50 s for a
+5-second 720p clip; longer videos take longer). Generation and analysis commands reply with
+"Sending to Genspark…" immediately after input, and the result arrives in the chat afterwards.
 
-### 理解する
+### Understand
 
-| コマンド | できること | 例 |
+| Command | What it does | Example |
 |---|---|---|
-| `/genspark-analyze-media` | 画像・動画・音声の内容を説明する（音声は文字起こし） | `/genspark-analyze-media genspark-out/test_cat.jpg 何をしている？` |
+| `/genspark-analyze-media` | Describe what is in an image, video, or audio file (audio is transcribed) | `/genspark-analyze-media genspark-out/test_cat.jpg What is it doing?` |
 
-### SNS を調べる
+### Social search
 
-`/genspark-social` は「どのサービスを調べるか」を **AI が判断して** X / Instagram / Reddit の
-適切な検索を実行します（コマンド自身は API を呼ばないので、クレジットは検索した分だけ）。
+`/genspark-social` lets the **AI decide** which service to search and runs the appropriate
+search on X / Instagram / Reddit (the command itself calls no API, so credits are spent only on
+the searches that are actually performed).
 
-| コマンド | できること | 例 |
+| Command | What it does | Example |
 |---|---|---|
-| `/genspark-social` | X・Instagram・Reddit を AI が選んで検索 | `/genspark-social DeepSeek Harness の評判` |
-| `/genspark-x` | X（Twitter）だけを検索（投稿・ユーザー・プロフィール） | `/genspark-x @elonmusk の最近の投稿` |
-| `/genspark-instagram` | Instagram だけを検索（投稿・ユーザー） | `/genspark-instagram @natgeo` |
-| `/genspark-reddit` | Reddit だけを検索（投稿・コメント・サブレディット） | `/genspark-reddit local llm の評判` |
+| `/genspark-social` | The AI picks and searches X, Instagram, and Reddit | `/genspark-social DeepSeek Harness reviews` |
+| `/genspark-x` | Search X (Twitter) only (posts, users, profiles) | `/genspark-x recent posts from @elonmusk` |
+| `/genspark-instagram` | Search Instagram only (posts, users) | `/genspark-instagram @natgeo` |
+| `/genspark-reddit` | Search Reddit only (posts, comments, subreddits) | `/genspark-reddit local llm reviews` |
 
-- AI に頼む形でも同じことができます（「X で Genspark の評判を調べて」→ `genspark_x_search` など）。
-- 結果は既定 **25 件**までを、投稿者・日付・反応数・投稿 URL 付きで表示します（新しい順）。
-- 1 回あたり約 1.6 クレジット（実測）。Instagram の検索は 10〜15 秒、Reddit の
-  「投稿とコメント」「サブレディットの投稿」は 40 秒前後かかることがあります。
-- X は「@ユーザー名」を渡すと**その人の投稿**、「話題」を渡すと投稿検索になります。
-  Instagram も同様です。Reddit は `sort`（top / new など）や期間の指定ができます。
-- **検索のコツ**（実測）: 語は 1〜2 語に絞る／日本語の話題は `language="ja"`（AI に「日本語で」と
-  伝えると付けてくれます）／「#タグ」は絞り込みに効かない／Reddit は「r/LocalLLaMA で」のように
-  サブレディットを指定すると当たりやすい。
-- 「実行に失敗しました」と出ても、未対応とは限りません（一時的な失敗があります）。プラグインは
-  **自動で 1 回だけ再試行**します。それでも駄目なら時間をおくか、語を変えてください。
-- コメント取得は実測でも空が多いです（失敗ではありません）。Reddit の検索結果には
-  score（投票数）が含まれないため、並べ替えは日付順になります。
+- You can get the same results by asking the AI (e.g. "check what people say about Genspark on X"
+  → `genspark_x_search`).
+- By default, results show up to **25** items with author, date, reaction counts, and post URL
+  (newest first).
+- About 1.6 credits per call (measured). Instagram searches take 10–15 seconds, and Reddit's
+  "post with comments" and "subreddit posts" can take around 40 seconds.
+- On X, passing "@username" returns **that user's posts**, while passing a "topic" runs a post
+  search. Instagram works the same way. Reddit accepts `sort` (top / new, etc.) and a time range.
+- **Search tips** (measured): keep queries to 1–2 words / for Japanese topics use `language="ja"`
+  (the AI adds it when you ask for results "in Japanese") / "#hashtags" do not narrow anything /
+  on Reddit, naming a subreddit such as "in r/LocalLLaMA" tends to work better.
+- If you see "failed to execute", it does not necessarily mean the feature is unsupported
+  (transient failures do happen). The plugin **retries automatically once**. If it still fails,
+  wait a while or change the wording.
+- Comment fetching is often empty in practice (that is not a failure). Reddit search results do
+  not include score (vote count), so results are ordered by date instead.
 
-### 上級者向け
+### Advanced
 
-| コマンド | できること | 例 |
+| Command | What it does | Example |
 |---|---|---|
-| `/genspark-models` | 選べる生成モデルの一覧 | `/genspark-models 動画` |
-| `/genspark-tools` | 全ツール（327 件）から探す | `/genspark-tools slack` |
-| `/genspark-run` | 任意のツールを 1 回だけ実行する | `/genspark-run me` |
+| `/genspark-models` | List the generation models you can choose from | `/genspark-models video` |
+| `/genspark-tools` | Search across all 327 tools | `/genspark-tools slack` |
+| `/genspark-run` | Run any tool once | `/genspark-run me` |
 
-### 添付ファイルを使う
+### Using attachments
 
-次の 5 コマンドは、画像・動画・音声・文書を**そのまま添付**して送れます。
-添付したときは、入力欄の文字が「指示・質問」として扱われます。
+The following 5 commands accept images, video, audio, and documents **attached directly**.
+When you attach something, the text in the input field is treated as the instruction or question.
 
-| コマンド | 添付したものの扱い |
+| Command | How the attachment is used |
 |---|---|
-| `/genspark-analyze-media` | 解析する対象（画像・動画・音声） |
-| `/genspark-summarize` | 要約する文書 |
-| `/genspark-crawl` | 読み取るページのファイル |
-| `/genspark-image` | 参照画像（編集・スタイル変換） |
-| `/genspark-video` | 先頭フレーム（画像から動画を作る） |
+| `/genspark-analyze-media` | The target to analyze (image, video, audio) |
+| `/genspark-summarize` | The document to summarize |
+| `/genspark-crawl` | The page file to read |
+| `/genspark-image` | A reference image (editing, style transfer) |
+| `/genspark-video` | The first frame (create a video from an image) |
 
-例: 猫の画像を添付して `/genspark-analyze-media 何をしている？`
+Example: attach a photo of a cat and run `/genspark-analyze-media What is it doing?`
 
-## 生成モデルを選ぶ
+## Choosing a generation model
 
-各コマンドは既定のモデルで動きますが、**Genspark は多数のモデルを提供しており、切り替えられます**。
+Each command runs with a default model, but **Genspark offers many models and you can switch
+between them**.
 
-| 種類 | 既定 | 選べる数 |
+| Kind | Default | Available |
 |---|---|---|
-| 画像生成 | `nano-banana-2-flash-lite` | 15 モデル |
-| 動画生成 | `kling/v3` | 21 モデル |
-| 音声・音楽生成 | Genspark 側の既定 | 25 モデル |
-| 文字起こし | `whisper-1` | 3 モデル |
+| Image generation | `nano-banana-2-flash-lite` | 15 models |
+| Video generation | `kling/v3` | 21 models |
+| Audio / music generation | Genspark's own default | 25 models |
+| Transcription | `whisper-1` | 3 models |
 
-使い方:
+How to use them:
 
-- **一覧を見る** — `/genspark-models`（`動画` `画像` `音声` `文字起こし` で絞り込み、id の一部でも可）
-- **AI に聞く** — 「使える動画モデルは？」「音声モデルの一覧を出して」
-  → AI が `genspark_models` で一覧を返します
-- **モデルを指定して作る** — 「gemini/veo3.1 で夕焼けの動画を作って」
-  → AI が `model` 引数を指定して実行します
-- **モデルの詳細** — 「kling/v3 の仕様を教えて」
-  → 対応比率・尺・音声の有無を `get_model_info` で調べて返します
+- **See the list** — `/genspark-models` (filter by `video`, `image`, `audio`, `transcribe`, or part
+  of an id)
+- **Ask the AI** — "Which video models are available?" "List the audio models"
+  → the AI returns the list via `genspark_models`
+- **Generate with a specific model** — "Create a sunset video with gemini/veo3.1"
+  → the AI runs it with the `model` argument set
+- **Model details** — "Tell me the specs of kling/v3"
+  → the AI reports supported aspect ratios, durations, and whether audio is available via
+  `get_model_info`
 
-> モデル名はプラグイン側で固定していません。一覧は毎回 Genspark のカタログから読むため、
-> モデルの追加・廃止に自動で追随します。
+> Model names are not pinned in the plugin. The list is read from Genspark's catalog every time,
+> so models that are added or retired are picked up automatically.
 
-> 生成コマンド（`/genspark-image` `/genspark-video` `/genspark-audio`）に「モデル一覧」「使い方」と
-> 書いた場合は、**生成せずに一覧・使い方を返します**（クレジットは消費しません）。
-> 生成するときは、作りたい内容をそのまま書いてください。
+> If you type "model list" or "usage" into a generation command (`/genspark-image`,
+> `/genspark-video`, `/genspark-audio`), it returns the list or the usage **without generating
+> anything** (no credits are spent). When you want to generate, just describe what you want.
 
-## 設定
+## Settings
 
-通常は変更不要です。必要になったときだけプロファイルのプラグイン設定に書いてください。
+You normally do not need to change anything. Only when necessary, add these to the plugin
+settings of your profile.
 
-| キー | 既定 | 説明 |
+| Key | Default | Description |
 |---|---|---|
-| `enabled` | `true` | false でツール登録をすべて解除 |
-| `cliEntry` | `""` | CLI エントリの絶対パス（空なら自動探索） |
-| `nodePath` | `""` | 子プロセスの node.exe（空なら自動探索） |
-| `writeMode` | `approve` | `approve`（未承認の書き込みは拒否） / `deny` / `allow` |
-| `timeoutMs` | `600000` | gsk 1 回あたりのタイムアウト |
-| `promotedCategories` | `["search","media","social"]` | 型付きツールとして登録するカテゴリ |
-| `commands` | `true` | コンポーザにコマンドを登録する |
-| `commandFollowup` | `true` | コマンド結果を AI に渡して解釈させる |
-| `commandInlineWaitMs` | `2500` | 入力欄を待たせる上限（ミリ秒） |
-| `debug` | `false` | CLI の stderr をログへ出す |
+| `enabled` | `true` | Set to false to unregister all tools |
+| `cliEntry` | `""` | Absolute path to the CLI entry (auto-detected when empty) |
+| `nodePath` | `""` | node.exe for child processes (auto-detected when empty) |
+| `writeMode` | `approve` | `approve` (reject unapproved writes) / `deny` / `allow` |
+| `timeoutMs` | `600000` | Timeout per gsk invocation |
+| `promotedCategories` | `["search","media","social"]` | Categories registered as typed tools |
+| `commands` | `true` | Register the composer commands |
+| `commandFollowup` | `true` | Hand command results to the AI for interpretation |
+| `commandInlineWaitMs` | `2500` | Upper bound for holding the input field (milliseconds) |
+| `debug` | `false` | Send the CLI's stderr to the log |
 
-## 困ったとき
+## Troubleshooting
 
-| 症状 | 対処 |
+| Symptom | What to do |
 |---|---|
-| 「API key is required」と出る | `gsk login`（または `GSK_API_KEY` を設定） |
-| 「CLI が見つかりません」と出る | `npm install -g @genspark/cli`。それでも駄目なら設定 `cliEntry` |
-| コマンド一覧に出てこない | DSH を再起動したか確認（設定 `commands: true`） |
-| 添付すると「受け付けません」と出る | 添付に対応しているのは上記 5 コマンドだけ |
-| 送信中に入力欄が数秒固まる | 仕様です（既定 2.5 秒で解け、結果は AI がチャットで返します） |
-| 生成が失敗する | `gsk me` で残クレジットを確認 |
-| 生成せずにモデル一覧が出る | 仕様です（「モデル一覧」の依頼と判定し、クレジットを消費していません） |
-| 新しい会話で `/genspark` が何も出ない | 「新規セッション」直後はセッション作成（画面の遷移）が終わっていないことがあります。表示が落ち着いてから実行するか、先に一言送ってください。それでも出ないときは、その時刻を控えてお知らせください（ホスト側の挙動で、プラグインからは制御できません） |
-| 新しい会話で `/genspark-video` がしばらく無反応 | 生成系は受付と同時に短いターンを起こしてヒーロー画面を解除します（0.1.10〜）。それでも無反応なら、セッションの遷移が終わっていない可能性があります |
-| 動画・画像が保存されない／生成がすぐ終わる | 結果に `status` と `failure_reason`、`task_id` が出ます（0.1.11〜）。`FAILED` ならプロンプトが**センシティブ判定**で拒否された可能性があります（表現を変えてください）。同じコマンドの再実行は新しい生成＝クレジット消費です |
-| `/genspark-social` が「AI が選んで検索します」とだけ返す | 仕様です。そのあと AI が実際の検索ツールを呼び、結果をチャットで説明します |
-| SNS 検索で「実行に失敗しました」と出る | 上流の一時的な失敗のことがあります（自動で 1 回再試行済み）。少し待って語を変えるか、action を変えてください。`count_posts`・Reddit のコメント検索など一部 action は上流が未対応です |
-| SNS 検索の結果が話題とずれる | 上流の検索精度の問題です。1〜2 語に絞る、X なら「日本語で」と伝えて `language=ja` を付けさせる、Reddit は「r/LocalLLaMA で」のようにサブレディットを指定してください |
-| コメントが 0 件で返る | 上流 API が空を返すことが多いです（失敗ではありません）。深追いせず、投稿検索の結果で判断してください |
+| "API key is required" appears | Run `gsk login` (or set `GSK_API_KEY`) |
+| A "CLI not found" message appears | Run `npm install -g @genspark/cli`. If it still fails, set `cliEntry` |
+| Commands do not show up in the list | Check that DSH was restarted (setting `commands: true`) |
+| Attaching a file says it is not accepted | Only the 5 commands listed above support attachments |
+| The input field freezes for a few seconds while sending | By design (it clears after 2.5 s by default, and the AI reports the result in the chat) |
+| Generation fails | Check your remaining credits with `gsk me` |
+| A model list appears instead of a generation | By design (the request was detected as a "model list" request, and no credits were spent) |
+| `/genspark` shows nothing in a new conversation | Right after "New session", session creation (the screen transition) may not have finished. Wait until the display settles before running it, or send a short message first. If it still shows nothing, note the time and let us know (this is host behaviour and cannot be controlled from the plugin) |
+| `/genspark-video` stays unresponsive for a while in a new conversation | Generation commands raise a short turn as soon as they accept the input, which dismisses the hero screen (0.1.10+). If it is still unresponsive, the session transition may not have finished |
+| Videos and images are not saved / generation ends immediately | The result includes `status`, `failure_reason`, and `task_id` (0.1.11+). If it is `FAILED`, the prompt may have been **rejected by the sensitive-content filter** (try different wording). Re-running the same command starts a new generation, so credits are spent |
+| `/genspark-social` only replies that the AI will choose and search | By design. The AI then calls the actual search tools and explains the results in the chat |
+| A social search says "failed to execute" | This can be a transient upstream failure (one automatic retry has already been made). Wait a little and change the wording, or change the action. Some actions, such as `count_posts` and Reddit comment search, are not supported upstream |
+| Social search results are off-topic | This is upstream search quality. Keep queries to 1–2 words, ask for "in Japanese" on X so `language=ja` is added, and name a subreddit on Reddit such as "in r/LocalLLaMA" |
+| Comments come back as 0 items | The upstream API often returns nothing (this is not a failure). Do not dig further; judge from the post search results |
 
-## もっと詳しく
+## Learn more
 
-- ツール（モデルが呼ぶ関数）の一覧・引数・実装メモ・検証手順 → [SKILL.md](SKILL.md)
-- 設計の経緯と実測記録 → [`../docs/`](../docs/)
-- 変更履歴 → [SKILL.md の末尾](SKILL.md#変更履歴)
+- Tools (the functions the model calls), arguments, implementation notes, and verification steps → [SKILL.md](SKILL.md)
+- Design history and measurement records → [`../docs/`](../docs/)
+- Changelog → [end of SKILL.md](SKILL.md#changelog)

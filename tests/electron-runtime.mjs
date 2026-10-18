@@ -1,16 +1,17 @@
 /**
- * DSH の実環境条件（親プロセスが Electron）での検証。
+ * Verification under the real DSH environment conditions (the parent process is Electron).
  *
- * 背景: DSH サーバーは Electron 上で動くため process.execPath は "DeepSeek Harness.exe"。
- * これをそのまま子プロセスのランタイムに使うと commander が Electron 用の argv 解釈に切り替わり
- * （node_modules/commander/lib/command.js:981-983, 1010-1018。ELECTRON_RUN_AS_NODE 起動時は
- * process.defaultApp が未設定なので argv.slice(1) がユーザー引数になる）
+ * Background: the DSH server runs on Electron, so process.execPath is "DeepSeek Harness.exe".
+ * Using that as the child process runtime makes commander switch to Electron-style argv handling
+ * (node_modules/commander/lib/command.js:981-983, 1010-1018. When launched with ELECTRON_RUN_AS_NODE,
+ * process.defaultApp is unset, so argv.slice(1) becomes the user arguments),
+ * and it fails with
  *   error: unknown command '<...>/dist/index.js'
- * で落ちる（実機で観測）。対策として実 Node 実行ファイルを探索して使う。
+ * (observed on real hardware). The fix searches for and uses a real Node executable.
  *
- * 実行（推奨 = 実際に Electron 上で走らせる）:
+ * Run (recommended = actually run it on Electron):
  *   $env:ELECTRON_RUN_AS_NODE='1'; & 'D:\deepseek\DeepSeek Harness.exe' tests/electron-runtime.mjs
- * 実行（素の Node。Electron 実行ファイルが分かる場合は壊れることを確認する）:
+ * Run (plain Node; confirms the breakage when the Electron executable is known):
  *   node tests/electron-runtime.mjs
  */
 import { existsSync } from 'node:fs';
@@ -19,8 +20,8 @@ import { createRunner, resolveNodeRuntime } from '../lib/gsk-cli.js';
 import { describeRun } from '../lib/result.js';
 
 const onElectron = Boolean(process.versions?.electron);
-console.log(`親プロセス: ${process.execPath}`);
-console.log(`process.versions.electron: ${process.versions?.electron ?? '(なし = 素の Node)'}`);
+console.log(`Parent process: ${process.execPath}`);
+console.log(`process.versions.electron: ${process.versions?.electron ?? '(none = plain Node)'}`);
 
 const checks = [];
 const record = (name, pass, detail) => {
@@ -28,23 +29,23 @@ const record = (name, pass, detail) => {
   console.log(`\n[${pass ? 'OK' : 'NG'}] ${name}\n  ${String(detail).replace(/\s+/g, ' ').slice(0, 400)}`);
 };
 
-// 1) ランタイム解決
+// 1) Runtime resolution
 const resolved = resolveNodeRuntime({ config: {}, env: process.env });
 record(
-  'ランタイム解決',
+  'Runtime resolution',
   !resolved.isElectron,
   `path=${resolved.path} / source=${resolved.source} / isElectron=${resolved.isElectron}`,
 );
 
 if (onElectron) {
   record(
-    'Electron 実行ファイルが候補から除外されている',
+    'The Electron executable is excluded from the candidates',
     resolved.path !== process.execPath,
     `resolved=${resolved.path} / execPath=${process.execPath}`,
   );
 }
 
-// 2) 既定設定で me が通るか（以前は unknown command で落ちていた経路）
+// 2) Does me pass with the default settings? (the path that used to fail with unknown command)
 const config = { timeoutMs: 120000 };
 const runner = createRunner({ getConfig: () => config });
 console.log(`\nentry: ${runner.resolveEntry()}`);
@@ -52,16 +53,16 @@ console.log(`runner.resolveRuntime(): ${JSON.stringify(runner.resolveRuntime())}
 
 const me = await runner.run(['--output', 'json', 'me'], { cwd: process.cwd(), timeoutMs: 60000 });
 const described = describeRun(me, { tool: 'me', maxChars: 2000 });
-record('me（アカウント取得）', described.ok, `code=${me.code} runtime=${me.runtime?.path} ${described.text}`);
+record('me (account retrieval)', described.ok, `code=${me.code} runtime=${me.runtime?.path} ${described.text}`);
 
-// 3) カタログ（ls）も同じ経路で通るか
+// 3) Does the catalog (ls) pass through the same path?
 const ls = await runner.run(['--output', 'json', 'ls'], { cwd: process.cwd(), timeoutMs: 120000 });
 const toolCount = Array.isArray(ls.value?.tools) ? ls.value.tools.length : 0;
-record('ls（カタログ取得）', toolCount > 100, `code=${ls.code} tools=${toolCount} ${ls.stderr.trim()}`);
+record('ls (catalog fetch)', toolCount > 100, `code=${ls.code} tools=${toolCount} ${ls.stderr.trim()}`);
 
-// 4) 昇格ツール（型付き）が DSH と同じ条件で通るか。
-//    親の cwd を別ディレクトリにして「親子で cwd が違う」状況も同時に再現する
-//    （実機で tmpDir='' が相対パスになり --args-file が ENOENT になった不具合の確認）。
+// 4) Does a promoted tool (typed) pass under the same conditions as DSH?
+//    Set the parent cwd to another directory to also reproduce "parent and child cwd differ"
+//    (confirming the real-hardware bug where tmpDir='' became a relative path and --args-file hit ENOENT).
 const otherCwd = tmpdir();
 const promotedRunner = createRunner({ getConfig: () => ({ ...config, tmpDir: '' }) });
 const promoted = await promotedRunner.runTool('web_search', { q: 'DeepSeek Harness' }, {
@@ -70,12 +71,12 @@ const promoted = await promotedRunner.runTool('web_search', { q: 'DeepSeek Harne
   timeoutMs: 120000,
 });
 record(
-  '昇格ツール経路（--args-file + cwd 不一致）',
+  'Promoted tool path (--args-file + cwd mismatch)',
   /"organic_results"|"result_type"|"status"\s*:\s*"ok"/.test(promoted.stdout ?? ''),
-  `親 cwd=${process.cwd()} / 子 cwd=${otherCwd} / code=${promoted.code} / ${promoted.stderr.trim().slice(0, 120)}`,
+  `parent cwd=${process.cwd()} / child cwd=${otherCwd} / code=${promoted.code} / ${promoted.stderr.trim().slice(0, 120)}`,
 );
 
-// 5) 参考: Electron 実行ファイルを強制すると再現する（対策が効いている証拠）
+// 5) Reference: forcing the Electron executable reproduces it (proof that the fix works)
 const electronPath = process.env.DSH_ELECTRON_PATH ?? (onElectron ? process.execPath : '');
 if (electronPath && existsSync(electronPath)) {
   const broken = await runner.run(['--output', 'json', 'me'], {
@@ -85,17 +86,17 @@ if (electronPath && existsSync(electronPath)) {
   });
   const reproduced = !broken.ok && /unknown command/i.test(broken.stderr);
   record(
-    '参考: Electron 実行ファイルを強制すると同じ症状を再現する',
+    'Reference: forcing the Electron executable reproduces the same symptom',
     reproduced,
     `code=${broken.code} stderr=${broken.stderr.split('\n').slice(0, 2).join(' | ')}`,
   );
 } else {
-  console.log('\n[SKIP] Electron 実行ファイルが不明なため再現チェック（4）は省略');
+  console.log('\n[SKIP] the Electron executable is unknown, so the reproduction check is omitted');
 }
 
 const failed = checks.filter((c) => !c.pass);
-console.log(`\n=== ${failed.length === 0 ? 'PASS' : `FAIL (${failed.length})`} / ${checks.length} チェック ===`);
+console.log(`\n=== ${failed.length === 0 ? 'PASS' : `FAIL (${failed.length})`} / ${checks.length} checks ===`);
 if (!onElectron) {
-  console.log('※親が素の Node のため、Electron 実機での確認は ELECTRON_RUN_AS_NODE=1 で再実行してください。');
+  console.log('* The parent is plain Node; re-run with ELECTRON_RUN_AS_NODE=1 to verify on real Electron.');
 }
 process.exit(failed.length === 0 ? 0 : 1);

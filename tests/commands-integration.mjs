@@ -1,12 +1,12 @@
 /**
- * ホストコマンド（`+` メニュー / `/` から実行される 13 コマンド）の実 CLI 統合テスト。
+ * Real-CLI integration test for the host commands (the 14 commands run from the `+` menu / `/`).
  *
- * 実行:
- *   node tests/commands-integration.mjs                  … 読み取り系のみ（ほぼ無料）
- *   node tests/commands-integration.mjs --with-generation … 画像生成も実行し genspark-out への保存を確認（クレジット消費）
+ * Run:
+ *   node tests/commands-integration.mjs                  … read-only only (almost free)
+ *   node tests/commands-integration.mjs --with-generation … also runs image generation and verifies saving to genspark-out (spends credits)
  *
- * コマンドは「モデルメッセージを作らない」ため、ここでは handler を直接呼んで
- * CommandResult（{kind, text}）と実際の CLI 呼び出し結果を検証する。
+ * Commands "do not create model messages", so here the handler is called directly to validate the
+ * CommandResult ({kind, text}) and the actual CLI call results.
  */
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -44,79 +44,79 @@ function record(name, ok, detail) {
 const flat = (text) => String(text).replace(/\s+/g, ' ').slice(0, 160);
 const invoke = (name, rawInput) => {
   const command = byName.get(name);
-  if (!command) throw new Error(`コマンド ${name} が登録されていません`);
+  if (!command) throw new Error(`command ${name} is not registered`);
   return command.handler({ agent: { session: { header: { cwd } } }, rawInput, signal: undefined });
 };
 
 if (!runner.resolveEntry()) {
-  console.error('CLI エントリが見つかりません（npm install -g @genspark/cli が必要）');
+  console.error('CLI entry not found (npm install -g @genspark/cli is required)');
   process.exit(1);
 }
 
-// 1) 登録数
-record('コマンドの登録数', commands.length === 13, `${commands.length} 件: ${commands.map((c) => c.name).join(', ')}`);
+// 1) Number of registered commands
+record('Number of registered commands', commands.length === 14, `${commands.length} items: ${commands.map((c) => c.name).join(', ')}`);
 
-// 2) /genspark（引数なし・状態表示）
+// 2) /genspark (no arguments; status display)
 const status = await invoke('genspark', '');
 record(
-  '/genspark（状態表示）',
-  status.kind === 'success' && /CLI/.test(status.text) && /昇格ツール/.test(status.text) && /genspark-search/.test(status.text),
+  '/genspark (status display)',
+  status.kind === 'success' && /CLI/.test(status.text) && /Promoted tools:/.test(status.text) && /genspark-search/.test(status.text),
   flat(status.text),
 );
 
-// 3) /genspark-tools（グループ一覧 → 単一一致で完全スキーマ）
+// 3) /genspark-tools (group overview → full schema when narrowed to a single match)
 const groups = await invoke('genspark-tools', '');
-record('/genspark-tools（グループ一覧）', groups.kind === 'success' && /ツール/.test(groups.text), flat(groups.text));
+record('/genspark-tools (group overview)', groups.kind === 'success' && /tool catalog:/.test(groups.text), flat(groups.text));
 const oneTool = await invoke('genspark-tools', 'crawler');
 record(
-  '/genspark-tools crawler（完全スキーマ）',
-  oneTool.kind === 'success' && /crawler/.test(oneTool.text) && /url/.test(oneTool.text) && /実行例/.test(oneTool.text),
+  '/genspark-tools crawler (full schema)',
+  oneTool.kind === 'success' && /crawler/.test(oneTool.text) && /url/.test(oneTool.text) && /Example:/.test(oneTool.text),
   flat(oneTool.text),
 );
 
-// 4) /genspark-run（読み取り系の実行）
+// 4) /genspark-run (read-only execution)
 const me = await invoke('genspark-run', 'me');
 record('/genspark-run me', me.kind === 'success' && /backorz@gmail\.com|plan/i.test(me.text), flat(me.text));
 
-// 5) /genspark-run の事前拒否（CLI を起動しない）
+// 5) /genspark-run pre-validation rejections (does not launch the CLI)
 const broken = await invoke('genspark-run', 'web_search {"q":');
-record('壊れた JSON を拒否', broken.kind === 'error' && /JSON/.test(broken.text), flat(broken.text));
+record('Rejects broken JSON', broken.kind === 'error' && /JSON/.test(broken.text), flat(broken.text));
 const unknown = await invoke('genspark-run', 'no_such_tool_xyz');
-record('存在しないツールを拒否', unknown.kind === 'error' && /というツールはありません/.test(unknown.text), flat(unknown.text));
+record('Rejects a nonexistent tool', unknown.kind === 'error' && /has no tool named/.test(unknown.text), flat(unknown.text));
 
 const full = await catalog.load(runner, { cwd });
 const interactive = (full.tools ?? []).find((tool) => tool.cli?.interactive_only);
 const confirming = (full.tools ?? []).find((tool) => tool.cli?.requires_confirmation && !tool.cli?.interactive_only);
 if (interactive) {
   const blocked = await invoke('genspark-run', interactive.name);
-  record(`対話必須を拒否（${interactive.name}）`, blocked.kind === 'error' && /対話必須/.test(blocked.text), flat(blocked.text));
+  record(`Rejects interactive-only (${interactive.name})`, blocked.kind === 'error' && /requires interactive input/.test(blocked.text), flat(blocked.text));
 } else {
-  record('対話必須を拒否', false, 'interactive_only のツールが見つかりません');
+  record('Rejects interactive-only', false, 'no interactive_only tool found');
 }
 if (confirming) {
   const blocked = await invoke('genspark-run', confirming.name);
-  record(`要確認を拒否（${confirming.name}）`, blocked.kind === 'error' && /確認が必要/.test(blocked.text), flat(blocked.text));
+  record(`Rejects confirmation-required (${confirming.name})`, blocked.kind === 'error' && /requires confirmation/.test(blocked.text), flat(blocked.text));
 } else {
-  record('要確認を拒否', false, 'requires_confirmation のツールが見つかりません');
+  record('Rejects confirmation-required', false, 'no requires_confirmation tool found');
 }
 
-// 6) 昇格コマンドの入力検証
+// 6) Input validation for promoted commands
 const emptySearch = await invoke('genspark-search', '');
-record('空入力は CLI を起動せずエラー', emptySearch.kind === 'error' && /入力が必要/.test(emptySearch.text), flat(emptySearch.text));
+record('Empty input errors without starting the CLI', emptySearch.kind === 'error' && /Input is required/.test(emptySearch.text), flat(emptySearch.text));
 
-// 7) 実検索（結果が人間向けに整形され、生 JSON を出さない）
+// 7) Real search (results are formatted for humans, no raw JSON)
 const search = await invoke('genspark-search', 'DeepSeek Harness plugin');
 record(
-  '/genspark-search（実検索・整形）',
-  search.kind === 'success' && /件/.test(search.text) && /https?:\/\//.test(search.text) && !/\{"[a-z_]+":/.test(search.text),
+  '/genspark-search (real search, formatted)',
+  search.kind === 'success' && /items/.test(search.text) && /https?:\/\//.test(search.text) && !/\{"[a-z_]+":/.test(search.text),
   flat(search.text),
 );
 
-// 8) analyze-media（メディア解析）— サンプル画像で実走（読み取りのみ）
+// 8) analyze-media (media analysis) — real run on a sample image (read-only)
 const visionImage = await invoke('genspark-analyze-media', 'D:\\Documents\\deepseek-harness\\default-workspace\\genspark-out\\test_cat.jpg');
-record('/genspark-analyze-media 画像', visionImage.kind === 'success' && /猫|ねこ|cat/i.test(visionImage.text) || /analysis|内容/i.test(visionImage.text), flat(visionImage.text));
+record('/genspark-analyze-media image', visionImage.kind === 'success' && /cat|analysis/i.test(visionImage.text), flat(visionImage.text));
 
-// 9) 生成コマンド（任意・クレジット消費）
+// 9) Generation command (optional; spends credits)
 if (withGeneration) {
   const outDir = join(cwd, 'genspark-out');
   const before = existsSync(outDir) ? readdirSync(outDir).length : 0;
@@ -130,17 +130,17 @@ if (withGeneration) {
     : undefined;
   const size = newest ? statSync(newest).size : 0;
   record(
-    '/genspark-image（生成 + genspark-out 保存）',
-    image.kind === 'success' && after > before && size > 1000 && /保存ファイル/.test(image.text),
-    `${newest ?? '(保存なし)'} (${size} バイト)`,
+    '/genspark-image (generation + save to genspark-out)',
+    image.kind === 'success' && after > before && size > 1000 && /Saved file:/.test(image.text),
+    `${newest ?? '(nothing saved)'} (${size} bytes)`,
   );
 } else {
-  console.log('ℹ 生成コマンドの実走はスキップ（--with-generation で実行）');
+  console.log('ℹ Skipping the real generation-command run (run with --with-generation)');
 }
 
-// 10) 長時間かかるコマンドの早期リターン（入力欄の凍結を短くする経路）
-//     ホストはコマンド完了まで送信トランザクション中で入力欄が凍結するため、
-//     commandInlineWaitMs を過ぎたら「実行中です」を返し、結果は引き継ぎでチャットへ届ける。
+// 10) Early return for long-running commands (shortens the input-field freeze)
+//     The host keeps the composer frozen in the submitting transaction until the command completes,
+//     so after commandInlineWaitMs it returns "running now" and delivers the result to chat via the follow-up.
 const seen = [];
 const followupAgent = {
   session: { header: { cwd } },
@@ -162,18 +162,18 @@ config.commandInlineWaitMs = 2500;
 await waitForFollowup(30000);
 const followupText = seen[0]?.content?.[0]?.text ?? '';
 record(
-  '早期リターン（結果は引き継ぎで届く）',
+  'Early return (the result arrives via follow-up)',
   early.kind === 'success' &&
-    /結果はこのあとチャットに届きます/.test(early.text) &&
+    /The result will arrive in chat afterwards/.test(early.text) &&
     seen.length === 1 &&
-    /状態: 成功/.test(followupText) &&
+    /Status: success/.test(followupText) &&
     /backorz@gmail\.com|plan/i.test(followupText),
-  `${flat(early.text)} / 引き継ぎ ${seen.length} 件: ${flat(followupText)}`,
+  `${flat(early.text)} / follow-ups: ${seen.length}: ${flat(followupText)}`,
 );
 
 const failed = results.filter((entry) => !entry.ok);
-console.log(`\n== ${results.length - failed.length}/${results.length} 成功 ==`);
+console.log(`\n== ${results.length - failed.length}/${results.length} passed ==`);
 if (failed.length > 0) {
-  console.log('失敗: ' + failed.map((entry) => entry.name).join(', '));
+  console.log('Failed: ' + failed.map((entry) => entry.name).join(', '));
   process.exit(1);
 }

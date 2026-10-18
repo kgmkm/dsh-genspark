@@ -1,50 +1,52 @@
-# SKILL.md — dsh-genspark の詳細リファレンス
+# SKILL.md — Detailed reference for dsh-genspark
 
-**読者**: このプラグインを操作する AI エージェント、または改修する開発者。
-**読み方**: 人間向けの概要は [README.md](README.md)。ここにはツール定義・引数・内部挙動・実測記録・検証手順を置く。
+**Audience**: AI agents operating this plugin, or developers modifying it.
+**How to read this**: For the human-facing overview, see [README.md](README.md). This file holds tool definitions, arguments, internal behaviour, measurement records, and verification steps.
 
-- 対象: `dsh-genspark` v0.1.9 / `@genspark/cli` 1.14.2 / 2026-10-18 実測
-- 前提: `gsk login` 済み（認証情報は `~/.genspark-tool-cli/config.json`。プラグインは保持しない）
-- カタログ実測: **327 ツール / 32 グループ**（`gsk ls`）
+Japanese: [SKILL_ja.md](SKILL_ja.md)
+
+- Target: `dsh-genspark` v0.1.15 / `@genspark/cli` 1.15.0 / measured on 2026-10-18
+- Prerequisite: already signed in with `gsk login` (credentials in `~/.genspark-tool-cli/config.json`; the plugin does not store them)
+- Catalog as measured: **327 tools / 32 groups** (`gsk ls`)
 
 ---
 
-## 1. ツール（モデルが呼ぶ関数）
+## 1. Tools (functions the model calls)
 
-### 1.1 汎用（カテゴリ非依存・常に登録）
+### 1.1 General (category-independent, always registered)
 
-| ツール | 用途 |
+| Tool | Purpose |
 |---|---|
-| `genspark_run` | 任意の Genspark ツールを実行（`tool` + `args`(JSON) + 必要なら `approve_write`） |
-| `genspark_tools` | 327 ツールのカタログを閲覧・検索（`keyword` / `group` / `full=true` で完全スキーマ） |
-| `genspark_models` | 生成モデルの一覧（`kind`: image / video / audio / transcribe、`filter` で部分一致） |
-| `genspark_status` | 認証・CLI パス・バージョン・実行ランタイム・書き込みポリシー・カタログ状態 |
+| `genspark_run` | Run any Genspark tool (`tool` + `args` (JSON) + `approve_write` if needed) |
+| `genspark_tools` | Browse and search the catalog of 327 tools (`keyword` / `group` / `full=true` for the full schema) |
+| `genspark_models` | List generation models (`kind`: image / video / audio / transcribe; `filter` for partial matches) |
+| `genspark_status` | Authentication, CLI path, version, runtime, write policy, catalog state |
 
-典型フロー:
+Typical flow:
 
 ```
-1) genspark_tools(keyword: "slack send", full: true)   … 正確なツール名と引数を確認
-2) genspark_run(tool: "slack", args: { action: "search", query: "..." })   … 読み取り系はそのまま
+1) genspark_tools(keyword: "slack send", full: true)   … confirm the exact tool name and arguments
+2) genspark_run(tool: "slack", args: { action: "search", query: "..." })   … read-only calls run directly
 3) genspark_run(tool: "slack", args: { action: "send", ... }, approve_write: true)
-   … ユーザーが承認した書き込みのみ実行
+   … writes run only after the user approves
 ```
 
-モデル選択のフロー:
+Model selection flow:
 
 ```
-1) genspark_models(kind: "video")   … 21 モデルの id を取得
-2) genspark_run(tool: "get_model_info", args: { model_names: ["kling/v3"] })   … 対応比率・尺・音声
+1) genspark_models(kind: "video")   … get the ids of the 21 models
+2) genspark_run(tool: "get_model_info", args: { model_names: ["kling/v3"] })   … aspect ratios, duration, audio
 3) genspark_generate_video({ query: "...", model: "gemini/veo3.1" })
 ```
 
-### 1.2 昇格ツール（カテゴリ厳選）
+### 1.2 Promoted tools (curated categories)
 
-`promotedCategories`（既定 `["search","media","social"]`）で選択。引数の探索を省略して直接呼べる。
-どのツールも `genspark_run` から実行できるが、こちらは引数名を調べずに済む。
+Selected by `promotedCategories` (default `["search","media","social"]`). They can be called directly, skipping argument discovery.
+Any tool can also be run through `genspark_run`, but these save you from looking up argument names.
 
-**`search`（検索・調査）**
+**`search` (search and research)**
 
-| ツール | Genspark 側 | 主な引数 |
+| Tool | Genspark tool | Main arguments |
 |---|---|---|
 | `genspark_web_search` | `web_search` | `q` |
 | `genspark_image_search` | `image_search` | `query` |
@@ -53,383 +55,410 @@
 | `genspark_maps_search` | `maps_search` | `query_type`, `engine`, `query` / `start_addr`+`end_addr` |
 | `genspark_summarize_document` | `summarize_large_document` | `url`, `question` |
 
-**`media`（生成）**
+**`media` (generation)**
 
-| ツール | Genspark 側 | 主な引数 |
+| Tool | Genspark tool | Main arguments |
 |---|---|---|
 | `genspark_generate_image` | `image_generation` | `query`, `image_urls`, `model`, `aspect_ratio`, `image_size`, `save_to` |
-| `genspark_generate_video` | `video_generation` | `query`, `model`(必須), `image_urls`, `duration`, `audio_enable`, `save_to` |
+| `genspark_generate_video` | `video_generation` | `query`, `model` (required), `image_urls`, `duration`, `audio_enable`, `save_to` |
 | `genspark_generate_audio` | `audio_generation` | `prompt`, `model`, `audio_type`, `params`, `save_to` |
 
-**`media`（解析＝画像・動画・音声の理解）**
+**`media` (analysis — understanding images, video, and audio)**
 
-| ツール | Genspark 側 | 主な引数 |
+| Tool | Genspark tool | Main arguments |
 |---|---|---|
 | `genspark_analyze_media` | `understand_images` / `analyze_media` / `audio_transcribe` | `media`, `instruction` |
 
-- `save_to` は CLI の `-o/--output-file` に渡され**ローカルへ保存**される（相対パスはセッション cwd 基準）。
-  省略すると URL だけが返る。
-- 保存後は**先頭バイトで実形式を判定し、拡張子が食い違えば自動改名**する（CLI は拡張子を検証しない）。
-  報告文: `保存ファイル: <path>（JPEG / 12345 バイト）（実体が JPEG のため拡張子を修正）`
-- `extra`（任意 JSON）は「スキーマにはあるが型付きにしていない」引数用（例: 動画の `tier` / `first_frame_url`）。
-  **スキーマに無いキーは CLI が拒否**する（サーバー呼び出し前なのでクレジットは消費しない）。
-- 生成モデルは **enum で縛らない**（Genspark 側の追加・廃止が頻繁なため）。実値は `genspark_models` が返す。
-  壊れた id は CLI がサーバー呼び出し前に弾く。
-- `genspark_crawl` / `genspark_summarize_document` は URL 前提。`http(s)://` かローカルファイルパスを渡す。
-  日本語の質問を渡すと CLI 起動前に日本語で案内する（`web_search` / `genspark_run` へ誘導）。
+- `save_to` is passed to the CLI's `-o/--output-file` and **saves the file locally** (relative paths resolve against the session cwd).
+  If omitted, only a URL is returned.
+- After saving, the **actual format is detected from the leading bytes and the extension is renamed automatically if it disagrees**
+  (the CLI does not validate extensions). A typical report:
+  `Saved file: <path> (JPEG / 12345 bytes) (extension corrected because the content is JPEG)`
+- `extra` (arbitrary JSON) is for arguments that exist in the schema but are not typed (e.g. `tier` / `first_frame_url` for video).
+  **Keys that are not in the schema are rejected by the CLI** (before the server call, so no credits are spent).
+- Generation models are **not constrained by an enum** (Genspark adds and retires them frequently). The real values come from `genspark_models`.
+  Invalid ids are rejected by the CLI before the server call.
+- `genspark_crawl` / `genspark_summarize_document` expect a URL. Pass an `http(s)://` URL or a local file path.
+  If you pass a Japanese question (prose) instead, the plugin explains the problem in Japanese before the CLI starts
+  (and points you to `web_search` / `genspark_run`).
 
-**`social`（SNS 検索。X / Instagram / Reddit の計 30 API）**
+**`social` (social search — 30 APIs across X / Instagram / Reddit)**
 
-| ツール | Genspark 側 | 主な引数 |
+| Tool | Genspark tool | Main arguments |
 |---|---|---|
-| `genspark_x_search` | `social_twitter`（`gsk social twitter`） | `query`, `action`（既定 auto）, `post_id`, `post_ids`, `start_date`, `end_date`, `language`, `limit`（既定 25）, `raw` |
-| `genspark_instagram_search` | `social_instagram`（`gsk social instagram`） | `query`, `action`, `post_id`, `post_ids`, `start_date`, `end_date`, `limit`, `raw` |
-| `genspark_reddit_search` | `social_reddit`（`gsk social reddit`） | `query`, `action`, `subreddit`, `sort`, `time`, `start_date`, `end_date`, `limit`, `raw` |
+| `genspark_x_search` | `social_twitter` (`gsk social twitter`) | `query`, `action` (default: auto), `post_id`, `post_ids`, `start_date`, `end_date`, `language`, `limit` (default: 25), `raw` |
+| `genspark_instagram_search` | `social_instagram` (`gsk social instagram`) | `query`, `action`, `post_id`, `post_ids`, `start_date`, `end_date`, `limit`, `raw` |
+| `genspark_reddit_search` | `social_reddit` (`gsk social reddit`) | `query`, `action`, `subreddit`, `sort`, `time`, `start_date`, `end_date`, `limit`, `raw` |
 
-- `action` を省くと `lib/social.js` の `autoAction()` が判定する。`@handle` は**その人の投稿**
-  （X → `get_posts_by_author` / Instagram → `get_posts_by_user` / Reddit → `get_user`）、
-  `from:handle` も同じ、それ以外は `search_posts`。`get_user` は **id / username / name しか返さない**
-  （bio・フォロワー数・URL は無い。実測）ので auto では選ばない。人が知りたいときは `search_users`。
-- **並び順はこちらで日付降順に直す**（`get_posts_by_author` の返却順が時系列でないため。実測）。
-  日付が読めない行は元の順序で末尾へ。`get_comments` / `search_comments` は元の順序を保つ。
-- **サーバーは `limit` を無視して 100〜127 件返す**ため、表示は既定 25 件に切る
-  （`limit` で 1〜100、全件・全フィールドが必要なら `raw: true` の JSON）。
-  切り口は「サーバー返却 N 件中 M 件を表示（残り …）」と**何を切ったか**を明示する。
-- 日付（`start_date` / `end_date`）は **`search_posts` にだけ送る**。実測で
-  `get_posts_by_author` + `start_date` は失敗し、外すと成功した。他の action に渡された日付は落とす。
-- **一時的な失敗は 1 回だけ自動で再試行する**（日付を送っていた場合は日付を落として再試行）。
-  実測では同一クエリ・同一引数でも数十秒後に成功した。`count_posts` / Reddit の `search_comments` /
-  `search_subreddits` は上流が未対応なので再試行しない（文言で代替案を出す）。
-- 投稿 URL は生データに無いことがある（X / Reddit）ので id から組み立てる
-  （`https://x.com/<user>/status/<id>` / `https://www.reddit.com/r/<sub>/comments/<id>`）。
-- 空結果は「該当する結果はありませんでした（サーバー返却 0 件）」の定型文にする（生 JSON を出さない）。
-- `get_post_with_comments` / `get_subreddit_with_posts` は `{result:{post,comments}}` /
-  `{result:{subreddit,posts}}` の入れ子で返る（実測）。専用の整形でタイトル・URL・コメント・
-  サブレディット見出しを出す。**コメントは実測でも空が多い**（失敗ではない）。
-- X の `language` を指定すると、行に `lang` がある場合だけ一致する行へ絞る（一致 0 件なら絞らない）。
-- 課金は 1 回あたり **約 1.6 クレジット**（実測: 13 回で 20.8）。Instagram の投稿検索は 10〜15 秒、
-  Reddit の `get_post_with_comments` / `get_subreddit_with_posts` は 40 秒前後かかることがある。
-- Reddit の検索精度は上流依存で、`query` だけだと無関係なサブレディットが混ざる（50 件中 1 件など）。
-  `subreddit` で絞るか 1 語にする。検索結果の行に **score / コメント数は含まれない**。
+- Omitting `action` lets `autoAction()` in `lib/social.js` decide. `@handle` means **that user's posts**
+  (X → `get_posts_by_author` / Instagram → `get_posts_by_user` / Reddit → `get_user`); `from:handle` behaves
+  the same; anything else becomes `search_posts`. `get_user` returns **only id / username / name**
+  (no bio, follower count, or URL; measured), so auto never chooses it. When a human wants that, use `search_users`.
+- **Ordering is re-sorted here into descending date order** (because `get_posts_by_author` does not return items
+  chronologically; measured). Rows whose date cannot be read keep their original order and go to the end.
+  `get_comments` / `search_comments` preserve the original order.
+- **The server ignores `limit` and returns 100–127 items**, so the display is cut to 25 items by default
+  (`limit` accepts 1–100; use the JSON from `raw: true` if you need every item and field).
+  The cut is made explicit: "showing M of N items returned by the server (the rest …)".
+- Dates (`start_date` / `end_date`) are **sent only to `search_posts`**. In measurement,
+  `get_posts_by_author` + `start_date` failed and succeeded once the date was removed. Dates passed to other
+  actions are dropped.
+- **Transient failures are retried automatically once** (when a date was sent, the retry drops it).
+  In measurement, the same query with the same arguments succeeded a few dozen seconds later.
+  `count_posts` / Reddit `search_comments` / `search_subreddits` are unsupported upstream, so they are not retried
+  (the message offers alternatives instead).
+- Post URLs are sometimes missing from the raw data (X / Reddit), so they are assembled from the id
+  (`https://x.com/<user>/status/<id>` / `https://www.reddit.com/r/<sub>/comments/<id>`).
+- Empty results produce a fixed message, "No matching results (0 items returned by the server)" (no raw JSON dump).
+- `get_post_with_comments` / `get_subreddit_with_posts` return nested `{result:{post,comments}}` /
+  `{result:{subreddit,posts}}` structures (measured). Dedicated formatting shows the title, URL, comments, and
+  subreddit heading. **Comments are often empty in measurement** (this is not a failure).
+- When `language` is specified for X, only rows whose `lang` matches are kept (if nothing matches, no filtering is applied).
+- Billing is **about 1.6 credits per call** (measured: 20.8 for 13 calls). Instagram post search takes 10–15 seconds,
+  and Reddit `get_post_with_comments` / `get_subreddit_with_posts` can take around 40 seconds.
+- Reddit search quality depends on the upstream service; with `query` alone, unrelated subreddits slip in
+  (e.g. 1 in 50 items). Narrow with `subreddit` or use a single word. Search result rows
+  **do not include score or comment counts**.
 
-### 1.3 メディア解析の振り分け（`genspark_analyze_media`）
+### 1.3 Media analysis routing (`genspark_analyze_media`)
 
-| 入力 | 実際に呼ぶツール | 備考 |
+| Input | Tool actually called | Notes |
 |---|---|---|
-| 画像 | `understand_images` | 複数画像は `image_urls` に全部 |
-| 動画 | `analyze_media` | `media_urls` + `requirements`（指示） |
-| 音声 | `audio_transcribe` | モデルは既定 `whisper-1` 固定。本文は `segments` に入る |
-| 画像＋動画/音声 | `understand_images` | 画像だけを対象にする |
+| Image | `understand_images` | For multiple images, put all of them in `image_urls` |
+| Video | `analyze_media` | `media_urls` + `requirements` (the instruction) |
+| Audio | `audio_transcribe` | The model is fixed to the default `whisper-1`. The body lands in `segments` |
+| Image + video/audio | `understand_images` | Only the images are targeted |
 
-- `media_list`（配列）を渡すと種類ごとに振り分ける。単数 `media` もある。
-- モデル名はユーザーに指定させない（将来モデルが消えても壊れないよう既定の汎用モデルに固定）。
-- 文字起こしの応答は `{ "<url>": { full_text, segments, words, … } }` で **`full_text` が空**のことが多い。
-  表示は `full_text` → `segments`（文字列／配列）の順で本文だけを出し、`words`（単語別タイムスタンプ）は出さない。
+- Passing `media_list` (an array) routes each type accordingly. A singular `media` is also accepted.
+- Do not let the user choose the model (it is pinned to the default general-purpose model so nothing breaks when a model disappears).
+- Transcription responses look like `{ "<url>": { full_text, segments, words, … } }` and **`full_text` is often empty**.
+  The display shows the body from `full_text` → `segments` (string or array) in that order, and never shows `words`
+  (word-level timestamps).
 
 ---
 
-## 2. コマンド（18 件）
+## 2. Commands (18)
 
-ホストの `ctx.commands.register({name, description, input, handler})` で登録する。
-`handler` は `{kind:'success'|'error', text}` を返す。名前は `/^[a-z][a-z0-9_-]*$/`。
+Registered with the host's `ctx.commands.register({name, description, input, handler})`.
+`handler` returns `{kind:'success'|'error', text}`. Names must match `/^[a-z][a-z0-9_-]*$/`.
 
-| コマンド | 実装 | 添付 |
+| Command | Implementation | Attachments |
 |---|---|---|
-| `/genspark` | 状態表示（`me` 実行・コマンド一覧） | — |
-| `/genspark-tools` | カタログ検索 | — |
-| `/genspark-models` | モデル一覧 | — |
-| `/genspark-run` | 任意ツール（読み取り専用） | — |
+| `/genspark` | Status display (runs `me`, lists commands) | — |
+| `/genspark-tools` | Catalog search | — |
+| `/genspark-models` | Model list | — |
+| `/genspark-run` | Arbitrary tool (read-only) | — |
 | `/genspark-search` | `web_search` | — |
 | `/genspark-image-search` | `image_search` | — |
 | `/genspark-crawl` | `crawler` | ✅ |
 | `/genspark-scholar` | `scholar_search` | — |
 | `/genspark-maps` | `maps_search` | — |
 | `/genspark-summarize` | `summarize_large_document` | ✅ |
-| `/genspark-image` | `image_generation` | ✅（参照画像） |
-| `/genspark-video` | `video_generation` | ✅（先頭フレーム） |
+| `/genspark-image` | `image_generation` | ✅ (reference image) |
+| `/genspark-video` | `video_generation` | ✅ (first frame) |
 | `/genspark-audio` | `audio_generation` | — |
 | `/genspark-analyze-media` | `understand_images` / `analyze_media` / `audio_transcribe` | ✅ |
-| `/genspark-social` | AI がサービスと action を選ぶ（API は呼ばない） | — |
-| `/genspark-x` | 同上（X のみ） | — |
-| `/genspark-instagram` | 同上（Instagram のみ） | — |
-| `/genspark-reddit` | 同上（Reddit のみ） | — |
+| `/genspark-social` | The AI chooses the service and action (no API call) | — |
+| `/genspark-x` | Same, X only | — |
+| `/genspark-instagram` | Same, Instagram only | — |
+| `/genspark-reddit` | Same, Reddit only | — |
 
-### 2.1 添付ファイル（コンポーザの画像・ファイル）
+### 2.1 Attachments (composer images and files)
 
-ホストの 3 段ゲート:
+The host applies three gates:
 
-1. クライアント送信前 — 添付あり かつ `desc.input.attachments !== true` → 送信せずトーストで拒否
-2. `dsh-commands` の `execute()` — 宣言が無いと `/{name} does not accept attachments` を返し**ハンドラを起動しない**
-3. 宣言はあるが attachments サービスが無い — `no attachment store is composed`
+1. Before the client sends — attachments present AND `desc.input.attachments !== true` → not sent; rejected with a toast
+2. `execute()` in `dsh-commands` — without the declaration, returns `/{name} does not accept attachments` and **does not invoke the handler**
+3. Declaration present but no attachment service — `no attachment store is composed`
 
-宣言したコマンドは `invocation.attachments` に `ImageBlock`（`{type:'image', attachment:{attachmentId, mediaType, name}}`）
-または `FileBlock` を受け取る。`leadingClaim()` は `claim.attachments = true` を会話側にも引き継ぐ。
+Commands that declare support receive an `ImageBlock`
+(`{type:'image', attachment:{attachmentId, mediaType, name}}`) or a `FileBlock` in `invocation.attachments`.
+`leadingClaim()` also propagates `claim.attachments = true` to the conversation side.
 
-- 実ストア（`dsh-attachment-local`）: 画像は `<root>/objects/xx/<sha256>`（**拡張子なし**）、
-  ファイルは `<root>/files/xx/<sha256>/<name>`。root は `<dshHome>/attachments/v1`。
-- 解決: `ctx.get('attachments')` の `imageHostPath` / `fileHostPath` にブロックを渡す。
-  画像は拡張子が無いので `<cwd>/genspark-out/attachments/<sha>-<n>.<mediaType 由来>` へ**複製**してから渡す
-  （gsk は拡張子で種別を判断する）。ファイルは名前があるのでそのまま使う。
-- 添付があるときは**入力欄の全文が指示・質問**になる。空入力でも実行する。
-- 解決できない環境では日本語で「パスを文字で入力してください」と案内し、CLI は起動しない。
+- Real store (`dsh-attachment-local`): images under `<root>/objects/xx/<sha256>` (**no extension**),
+  files under `<root>/files/xx/<sha256>/<name>`. The root is `<dshHome>/attachments/v1`.
+- Resolution: pass the block to `imageHostPath` / `fileHostPath` on `ctx.get('attachments')`.
+  Images have no extension, so they are **copied** to `<cwd>/genspark-out/attachments/<sha>-<n>.<derived from mediaType>`
+  before being passed (gsk determines the type from the extension). Files already have a name, so they are used as-is.
+- When attachments are present, **the entire text in the input field becomes the instruction / question**.
+  It runs even with empty input.
+- In environments where this cannot be resolved, it explains in Japanese that the path should be typed as text,
+  and the CLI is not launched.
 
-### 2.2 結果の引き継ぎ
+### 2.2 Handing results over
 
-- 実行後、結果は `agent.followup(message)` で **AI にも渡る**（チャットで要点・解釈を返す）。
-  設定 `commandFollowup: false` で無効化（モデル履歴を消費しない従来動作）。
-- `source` は `{ kind: 'plugin:dsh-genspark' }`（V4 形式）。V3 の `{kind:'plugin', plugin:'…'}` は
-  V4 検証で拒否されターンごと失敗する（実機で発生）。`tests/preflight-message-source.mjs` が形を固定。
-- 引き継ぎは**コマンド完了を待たせない**（次ティックへ遅延＋Promise は握り潰し）。
-- 既定 2.5 秒（`commandInlineWaitMs`）でコマンド欄を先に完了させ、結果は引き継ぎで届ける。
-  ホストはコマンド完了まで送信トランザクション中で入力欄が凍結するため（実測: 画像生成で 8 秒）。
-  0 以下にすると従来どおり完了まで待つ（引き継ぎ無効時は自動的に待つ）。
-- 生成・解析系（`ACK_TOOLS`: image/video/audio_generation, understand_images, analyze_media,
-  audio_transcribe, summarize_large_document, crawler）は**入力直後 150ms で受付メッセージ**を返す:
-  「Genspark に送信中です（目安…）。結果はこのあとチャットに届きます。」
-  待ち時間は `commandInlineWaitMs`（既定 2500）の値ではなく **最大 150ms** を優先する
-  （設定に従うと受付が 2.5 秒遅れ、入力欄もその間凍結するため）。`commandInlineWaitMs` が 0 以下なら
-  従来どおり完了まで待ち、結果をコマンド欄に出す。
-  150ms 以内に終わった検証エラー（入力不足など）はそのまま結果として返す。
-  一覧・状態確認など速いコマンドは従来どおり、間に合えば結果をその場で返す。
-- 早期リターンの完了文言は生成種別ごとの目安入り（画像 15〜40 秒 / 動画 1〜2 分 / 音声 30〜60 秒。
-  2026-10-18 実測: 5 秒・720p の動画で約 50 秒、画像で約 10 秒）。
-- **新しい会話のヒーロー画面対策**: DSH は「blank」なセッションでヒーロー画面を出し、チャット欄
-  （コマンド欄を含む）を覆う。blank は `turn/start` でしか解除されないため、生成が終わるまで
-  受付メッセージすら見えない（2026-10-18 実機: 動画で約 70 秒間なにも表示されない）。
-  そこで受付時に `agent.session.snapshotEvents()` でログを調べ、`turn/start` が無い（＝新しい会話）
-  ときだけ followup を 1 通送ってターンを起こし、ヒーローを解除する（`scheduleReceipt`）。
-  既存の会話ではコマンド欄がそのまま見えるので何もしない（余計なターン＝トークンを使わない）。
-  DSH 本体は変更しない（プラグインだけで完結する）。
-- どのコマンドも**例外を投げない**。想定外は日本語のエラー結果に変換し、原因はログへ。
-- 生成系は成果物を `<cwd>/genspark-out/` へ自動保存し、保存先とサイズを表示する。
-  保存できなかったときは **黙って成功にしない**（0.1.11〜）:
-  - URL があれば `genspark.ai` のファイル配信に限り自前で取得して保存する（CLI の `-o` が失敗した保険）。
-  - URL が無ければ `status` / `failure_reason` / `task_id` を表示し、**エラーとして返す**。
-    `failure_reason` が safety / policy / rejected 系なら「**安全ポリシー（センシティブ判定）により
-    拒否されました**」と日本語で案内する（0.1.12〜。英語のまま出していた）。
-    実測（2026-10-18）: NSFW の動画は `status: FAILURE` +
-    「Content was rejected by the platform's safety policy…」を返し、6 秒で終わった。
-    正常な動画は約 50 秒かかるので、**所要時間が極端に短い＝拒否**の目安になる。
-  - 同じコマンドの再実行は**新しい生成**（クレジット消費）になる。まず表現を変えるか、
-    Genspark の画面（履歴）で確認するよう案内する。
-- **コマンドに承認の仕組みは無い**。副作用のある操作は常に `--no-input` で実行し、確認必須・対話必須は
-  事前に拒否する（書き込みは `genspark_run` ツールから）。
+- After execution, the result is **also passed to the AI** via `agent.followup(message)` (the AI returns the key points and
+  interpretation in the chat). Disable it with `commandFollowup: false` (the previous behaviour, which does not consume model history).
+- `source` is `{ kind: 'plugin:dsh-genspark' }` (V4 format). The V3 form `{kind:'plugin', plugin:'…'}` is rejected by
+  V4 validation and fails the whole turn (observed on real hardware). `tests/preflight-message-source.mjs` pins the shape.
+- The handover **does not make the command wait for completion** (it defers to the next tick and swallows the promise).
+- By default the command field completes after 2.5 seconds (`commandInlineWaitMs`) and the result is delivered through the handover.
+  The host freezes the input field while the send transaction is open until the command completes (measured: 8 seconds for
+  image generation). Setting it to 0 or lower waits for completion as before (it waits automatically when the handover is disabled).
+- Generation and analysis commands (`ACK_TOOLS`: image/video/audio_generation, understand_images, analyze_media,
+  audio_transcribe, summarize_large_document, crawler) **return an acknowledgement 150 ms after input**:
+  "Sending to Genspark (estimate …). The result will arrive in the chat shortly."
+  The wait prefers **at most 150 ms** rather than the value of `commandInlineWaitMs` (default 2500)
+  (following the setting would delay the acknowledgement by 2.5 seconds and freeze the input field for that long).
+  If `commandInlineWaitMs` is 0 or lower, it waits for completion as before and shows the result in the command field.
+  Validation errors that finish within 150 ms (missing input, etc.) are returned as the result as-is.
+  Fast commands such as list and status checks behave as before and return the result inline when it is ready in time.
+- The completion text for early returns includes an estimate per generation type (images 15–40 s / video 1–2 min /
+  audio 30–60 s. Measured 2026-10-18: about 50 seconds for a 5-second 720p video, about 10 seconds for an image).
+- **Workaround for the hero screen in new conversations**: DSH shows a hero screen for a "blank" session and covers
+  the chat area (including the command field). Because blank is only cleared by `turn/start`, not even the acknowledgement
+  is visible until generation finishes (2026-10-18, real machine: nothing displayed for about 70 seconds for video).
+  So on acknowledgement it inspects the log with `agent.session.snapshotEvents()` and, only when there is no `turn/start`
+  (= a new conversation), sends one followup to start a turn and dismiss the hero (`scheduleReceipt`).
+  In existing conversations the command field is already visible, so it does nothing (avoiding an extra turn, which costs tokens).
+  DSH itself is not modified (everything is completed inside the plugin).
+- No command **throws**. Unexpected cases are converted into an error result, and the cause goes to the log.
+- Generation commands save artifacts to `<cwd>/genspark-out/` and show the path and size.
+  When saving fails, it **does not silently report success** (0.1.11+):
+  - If a URL exists, it fetches and saves it itself, but only for `genspark.ai` file delivery (a fallback for when the CLI's `-o` fails).
+  - If there is no URL, it shows `status` / `failure_reason` / `task_id` and **returns an error**.
+    If `failure_reason` is safety / policy / rejected, it explains that the content **was rejected by the safety policy
+    (sensitive-content filter)** (0.1.12+; previously it was shown in English).
+    Measured (2026-10-18): an NSFW video returned `status: FAILURE` +
+    "Content was rejected by the platform's safety policy…" and finished in 6 seconds.
+    A normal video takes about 50 seconds, so **an extremely short duration is a sign of rejection**.
+  - Re-running the same command starts a **new generation** (credits are spent). First suggest changing the wording,
+    or checking the Genspark screen (history).
+- **Commands have no approval mechanism.** Operations with side effects always run with `--no-input`, and anything
+  requiring confirmation or interaction is rejected up front (writes go through the `genspark_run` tool).
 
-### 2.3 誤爆ガード（生成コマンドにモデル一覧・使い方を書いたとき）
+### 2.3 Meta-intent guard (when a generation command receives a model list or usage request)
 
-- 生成コマンド（`/genspark-image` `/genspark-video` `/genspark-audio`）は入力を**そのまま生成プロンプト**へ
-  渡すため、`動画モデルのリスト` のようなメタな依頼が生成として実行され、クレジットを消費する事故があった
-  （2026-10-18 実測: `/genspark-video 動画モデルのリストください` を 2 回実行し、約 924 クレジット）。
-- `lib/guard.js` の `detectMetaIntent()` が「モデル一覧」「使い方」だけを検出し、**生成せずに**
-  モデル一覧（カタログの実 enum）や使い方を返す。
-- 判定は狭く取る（`モデル` を含むだけの生成プロンプトは素通し。例: 「モデルのような女性が歩く動画」）。
-  添付があるときは生成対象が明確なのでガードしない。
+- Generation commands (`/genspark-image` `/genspark-video` `/genspark-audio`) pass their input **straight through as the
+  generation prompt**, so a meta request such as "video model list" was executed as a generation and burned credits
+  (measured 2026-10-18: running `/genspark-video video model list` twice cost about 924 credits).
+- `detectMetaIntent()` in `lib/guard.js` detects only "model list" and "usage" requests and, **without generating**,
+  returns the model list (the catalog's real enum) or the usage.
+- The detection is deliberately narrow (a generation prompt that merely contains "model" passes through, e.g.
+  "a video of a woman like a model walking"). When attachments are present the generation target is clear, so the guard is not applied.
 
-### 2.4 新しい会話（スレッド作成中）ではコマンドを実行できない
+### 2.4 Commands cannot run while a new conversation (thread) is being created
 
-- クライアントは `/` コマンドを**そのセッションのコマンドディレクトリ**で解決する。セッションがまだ
-  open になっていない遷移中に送ると解決できず、何も表示されないことがある（2026-10-18 ユーザー報告。
-  同じ操作を遷移後にやり直すと成功する）。
-- これはホスト（`dsh-client-ui-commands` / `dsh-commands`）側の挙動で、**プラグインからは回避できない**
-  （プラグインはコマンドを登録するだけで、セッションの作成やクライアントの解決には関与しない）。
-- README では「表示が落ち着いてから実行する」を案内している。恒久対策はクライアント側で
-  「セッションが open になるまで待ってから解決する」こと（上流の改善候補）。
-- 遷移が終わって open になったあとも、まだ一度もターンが無いセッションではヒーロー画面が
-  チャット欄を覆う。こちらは 2.2 の `scheduleReceipt`（プラグイン側）で解除する。
+- The client resolves `/` commands **against that session's command directory**. If you send one during a transition when
+  the session is not open yet, it cannot be resolved and nothing may appear (user report, 2026-10-18; the same
+  action repeated after the transition succeeds).
+- This is behaviour on the host side (`dsh-client-ui-commands` / `dsh-commands`) and **cannot be avoided from the plugin**
+  (the plugin only registers commands; it is not involved in creating sessions or in client-side resolution).
+- The README advises "wait until the display settles before running it". The permanent fix is for the client to
+  "wait until the session is open before resolving" (a candidate for an upstream improvement).
+- Even after the transition finishes and the session is open, the hero screen still covers the chat area in a session that
+  has never had a turn. That case is cleared by `scheduleReceipt` in 2.2 (on the plugin side).
 
-### 2.5 振り分けコマンド（`/genspark-social` 系）
+### 2.5 Routing commands (`/genspark-social` family)
 
-- これら 4 コマンドは **API を呼ばない**（クレジットを消費しない・数 ms で完了する）。
-  受け付けた文言を `promptFor` で「どのサービスをどの action で調べるか」まで含む依頼文に変換し、
-  `agent.followup` でモデルへ渡す。モデルが `genspark_x_search` / `genspark_instagram_search` /
-  `genspark_reddit_search` を選んで実行する（`agent` が判断して API を割り振る形）。
-- コマンド欄には「X（Twitter）・Instagram・Reddit を AI が選んで検索します:「…」」を返す。
-- プロンプトには**実測に基づく検索作法**を書いてある（0.1.14〜）: 検索語は 1〜2 語／日本語は
-  `language="ja"`／「#タグ」は効かない／Reddit は `subreddit` で絞る／サービスは最大 3 つだが
-  **同一サービス内の言い換え再試行は 3 回まで**／「Failed to execute」は一時障害のこともある／
-  コメントは空が多い。実運用で 1 タスク 29 回呼んだ反省（2026-10-18 の実地メモ）から。
-- `commandFollowup: false` と `agent.followup` が無い環境では振り分けできないため、
-  理由と代替（ツールを直接使う）をエラー結果として返す。
-- 入力が空なら使い方だけを返し、引き継ぎは送らない（`promptFor` が `null` を返す）。
-- `social` カテゴリを無効にすると、この 4 コマンドと 3 ツールは登録されない。
+- These 4 commands **call no API** (they spend no credits and finish in a few milliseconds). They turn the accepted text
+  into a request via `promptFor` that states which service to search with which action, and pass it to the model with
+  `agent.followup`. The model chooses and runs `genspark_x_search` / `genspark_instagram_search` /
+  `genspark_reddit_search` (the `agent` decides and dispatches the API calls).
+- The command field returns a short notice: "X (Twitter), Instagram, and Reddit will be searched by the AI:", followed by the accepted request.
+- The prompt contains **search practices based on measurement** (0.1.14+): 1–2 word queries / for Japanese use
+  `language="ja"` / "#tags" do not work / on Reddit narrow with `subreddit` / at most 3 services, but
+  **reworded retries within the same service are capped at 3** / "Failed to execute" can be a transient failure /
+  comments are often empty. This came from a retrospective of calling 29 times in a single task during real operation
+  (field note from 2026-10-18).
+- In environments with `commandFollowup: false` or without `agent.followup`, routing is impossible, so it returns the reason
+  and an alternative (use the tools directly) as an error result.
+- If the input is empty, it returns only the usage and sends no handover (`promptFor` returns `null`).
+- Disabling the `social` category means these 4 commands and 3 tools are not registered.
 
 ---
 
-## 3. 認証
+## 3. Authentication
 
-| 方法 | 手順 | 備考 |
+| Method | Steps | Notes |
 |---|---|---|
-| ブラウザ | `gsk login` | `~/.genspark-tool-cli/config.json` に保存。`--config` / `GSK_CONFIG` で別プロファイル |
-| API キー | `GSK_API_KEY=gsk_...` | 環境変数が config より優先 |
-| 確認 | `gsk me`（`gsk login-info`） | メール・プラン・残クレジット |
-| 解除 | `gsk logout` | 保存キーを削除 |
+| Browser | `gsk login` | Saved to `~/.genspark-tool-cli/config.json`. Use `--config` / `GSK_CONFIG` for a different profile |
+| API key | `GSK_API_KEY=gsk_...` | Environment variables take precedence over config |
+| Check | `gsk me` (`gsk login-info`) | Email, plan, remaining credits |
+| Sign out | `gsk logout` | Deletes the saved key |
 
-優先順位: CLI オプション > 環境変数（`GSK_API_KEY` / `GSK_BASE_URL` / `GSK_PROJECT_ID`）> config ファイル。
-プラグイン側は**何も保持しない**。`genspark_status` が `me` の結果でログイン状態を表示する。
+Precedence: CLI options > environment variables (`GSK_API_KEY` / `GSK_BASE_URL` / `GSK_PROJECT_ID`) > config file.
+The plugin **stores nothing**. `genspark_status` shows the login state from the result of `me`.
 
 ---
 
-## 4. 生成モデル
+## 4. Generation models
 
-モデル一覧は `gsk ls` の `model` 引数 enum から取得する（`lib/models.js`）。
+The model list comes from the `model` argument enum of `gsk ls` (`lib/models.js`).
 
-| kind | ツール | 件数（2026-10-18） | 既定 |
+| kind | Tool | Count (2026-10-18) | Default |
 |---|---|---|---|
 | `image` | `image_generation` | 15 | `nano-banana-2-flash-lite` |
-| `video` | `video_generation` | 21 | `kling/v3`（コマンドの既定） |
-| `audio` | `audio_generation` | 25 | Genspark 側の既定 |
+| `video` | `video_generation` | 21 | `kling/v3` (the command default) |
+| `audio` | `audio_generation` | 25 | Genspark's own default |
 | `transcribe` | `audio_transcribe` | 3 | `whisper-1` |
 
-- 一覧: `genspark_models({ kind, filter })` / `/genspark-models [動画|kling]`
-- 個別仕様: `gsk get_model_info`（引数 `model_names`、配列で複数可）
-- モデル追加・廃止には自動追随する（静的リストを持たない）
+- List: `genspark_models({ kind, filter })` / `/genspark-models [video|kling]`
+- Per-model specs: `gsk get_model_info` (argument `model_names`; an array of several is accepted)
+- Model additions and retirements are followed automatically (there is no static list)
 
 ---
 
-## 5. 実装上の要点（実測に基づく）
+## 5. Implementation notes (based on measurement)
 
-- **起動**: shim（`gsk.cmd`）は Node から spawn すると EINVAL。`node <dist/index.js>` を直接起動する。
-- **ランタイム**: DSH は Electron 上で動くため `process.execPath` は `DeepSeek Harness.exe`。
-  そのまま使うと commander が Electron 用 argv 解釈に切り替わり
-  `error: unknown command '<...>/dist/index.js'` で落ちる。**実 Node（node.exe）を探索**して使う
-  （`config.nodePath` → 環境変数 → `PATH` → 既定インストール先）。見つからない場合のみ
-  `ELECTRON_RUN_AS_NODE=1` で Electron を使うが、`me` など一部が失敗し `genspark_status` が警告する。
-- **stdio**: Windows サンドボックス下では `stdio:'pipe'` が EPERM。stdout/stderr を一時ファイルの fd へリダイレクト。
-- **stdin**: `'ignore'`（確認プロンプトは EOF → 拒否。サーバー呼び出しなし）。
-- **環境**: `GSK_NO_AUTO_UPDATE=1` を必ず注入（自動更新を試みる実行は終了コード `0xC0000409` になり成功判定に使えない）。
-- **引数**: JSON を一時ファイルへ書き `--args-file` で渡す（シェル展開・クォート崩れを回避）。
-  CLI は**サーバー呼び出し前にスキーマ検証**するため、引数名の誤りは
-  `[ERROR] --args-file: "x" is not a param` で即落ちる（クレジット消費なし）。
-  - 一時ファイルは `resolveTmpRoot()` で**必ず絶対パス**にする（子プロセスの cwd 依存を避ける。
-    `tmpDir` が空文字でも `??` が「値あり」と扱わないようにしてある）。
-  - `--args-file` は**パラメータを持つツールにだけ**生える。引数が空なら付けない
-    （付けると `error: unknown option '--args-file'`）。
-- **成功判定**: 終了コードではなく「stdout が JSON として読めるか」を主判定にする。
-- **承認**: 未承認の確認必須操作は `--no-input` で拒否（exit code 2）。承認後は `--yes`。
-  対話必須（`interactive_only`: slack send/react/upload/invite、google_drive share、x_post_tweet 等）は
-  原理的に自動化できないため、カタログで判定して事前に拒否する。
-- **グループ付きコマンド**: `social_twitter` のようなツールは `gsk social twitter` で実行する
-  （`gsk social_twitter` は `unknown command`）。`lib/catalog.js` の `toolInvocation()` が
-  カタログの `cli.path` / `cli.group` から CLI 本体と同じ規則で解決し（path > group+sub > name）、
-  `runner.runTool` の `toolCommand` に渡す。`genspark_run` もキャッシュ済みカタログで解決し、
-  `unknown command` で落ちたときだけカタログを取り直して 1 回だけ再試行する
-  （これで gmail / box / jira / linkedin など 31 グループのツールも `genspark_run` から実行できる）。
-- **コマンド登録**: `ctx.inject(['commands'], …)` で**任意依存**にする（非 GUI プロファイルで
-  プラグイン全体が読み込まれなくなるのを避ける）。同一スコープで重複すると throw するため 1 件ずつ try/catch。
-  `input: { hint }` を付けた行は、メニューから選ぶと即実行せず入力欄にヒントを出す。
-  `input.attachments = true` が添付受け取りの宣言。
+- **Launch**: the shim (`gsk.cmd`) returns EINVAL when spawned from Node. Run `node <dist/index.js>` directly.
+- **Runtime**: DSH runs on Electron, so `process.execPath` is `DeepSeek Harness.exe`.
+  Using it as-is switches commander into Electron argv parsing and fails with
+  `error: unknown command '<...>/dist/index.js'`. The plugin **looks for a real Node (node.exe)** and uses it
+  (`config.nodePath` → environment variable → `PATH` → default install location). Only when none is found does it
+  fall back to Electron with `ELECTRON_RUN_AS_NODE=1`, but then some commands such as `me` fail and `genspark_status` warns about it.
+- **stdio**: under the Windows sandbox, `stdio:'pipe'` returns EPERM. stdout/stderr are redirected to the file descriptors of temporary files.
+- **stdin**: `'ignore'` (confirmation prompts hit EOF → rejected. No server call).
+- **Environment**: `GSK_NO_AUTO_UPDATE=1` is always injected (a run that attempts an auto-update exits with code `0xC0000409`,
+  which cannot be used for success detection).
+- **Arguments**: JSON is written to a temporary file and passed with `--args-file` (avoiding shell expansion and quoting breakage).
+  The CLI **validates against the schema before calling the server**, so a wrong argument name fails immediately with
+  `[ERROR] --args-file: "x" is not a param` (no credits spent).
+  - Temporary files are **always made absolute** by `resolveTmpRoot()` (avoiding dependence on the child process's cwd;
+    `??` is prevented from treating an empty `tmpDir` as "has a value").
+  - `--args-file` is **only added for tools that take parameters**. With empty arguments it is omitted
+    (adding it produces `error: unknown option '--args-file'`).
+- **Success detection**: the primary check is whether stdout can be read as JSON, not the exit code.
+- **Approval**: operations that require confirmation and are not approved are rejected with `--no-input` (exit code 2).
+  After approval they run with `--yes`. Interaction-only operations (`interactive_only`: slack send/react/upload/invite,
+  google_drive share, x_post_tweet, etc.) cannot be automated by design, so the catalog is checked and they are rejected up front.
+- **Grouped commands**: tools such as `social_twitter` are run as `gsk social twitter`
+  (`gsk social_twitter` gives `unknown command`). `toolInvocation()` in `lib/catalog.js`
+  resolves them from the catalog's `cli.path` / `cli.group` using the same rules as the CLI itself
+  (path > group+sub > name) and passes the result to `toolCommand` of `runner.runTool`.
+  `genspark_run` also resolves from the cached catalog, and only when it fails with `unknown command` does it
+  refetch the catalog and retry once (this makes tools from 31 groups, including gmail / box / jira / linkedin,
+  runnable from `genspark_run`).
+- **Command registration**: use `ctx.inject(['commands'], …)` so the dependency is **optional**
+  (avoiding the whole plugin failing to load in non-GUI profiles). Registering a duplicate in the same scope throws,
+  so each registration is wrapped in try/catch. Lines with `input: { hint }` show a hint in the input field instead of
+  running immediately when picked from the menu. `input.attachments = true` is the declaration for accepting attachments.
 
-## 6. 開発
+## 6. Development
 
-> シェルから `gsk --version` を叩くと **ExecutionPolicy で落ちる**ことがある
-> （`gsk.ps1 cannot be loaded because running scripts is disabled`）。バージョン確認は
-> `node <npm>\@genspark\cli\dist\index.js --version` のように dist を直接起動する。
-> プラグインは `resolveNodeRuntime()` + dist 直接起動なので影響を受けない。
+> Running `gsk --version` from a shell can **fail under ExecutionPolicy**
+> (`gsk.ps1 cannot be loaded because running scripts is disabled`). To check the version,
+> launch dist directly, e.g. `node <npm>\@genspark\cli\dist\index.js --version`.
+> The plugin is unaffected because it uses `resolveNodeRuntime()` and launches dist directly.
 
 ```powershell
-# 単体テスト（ホスト不要・ネットワーク不要）
+# Unit tests (no host, no network)
 node tests/unit.test.mjs
 node tests/runtime.test.mjs
 node tests/promoted.test.mjs
 node tests/social.test.mjs
 node tests/commands.test.mjs
 
-# ホスト実物の dsh-tools / dsh-commands で検証（再起動前のプリフライト）
-node tests/preflight-host-schema.mjs     # defineTool の DSL・引数検証
-node tests/preflight-commands-host.mjs   # 実物 CommandRuntime に 14 コマンドを登録できるか
-node tests/preflight-commands-exec.mjs   # 実物ディスパッチャで実行経路を検証
-node tests/preflight-commands-exec.mjs --with-cli  # 実 CLI でも実行（読み取りのみ・数クレジット）
-node tests/preflight-plugin-load.mjs     # 出荷物の index.js を実際に読み込み apply() まで走らせる
-node tests/preflight-message-source.mjs  # 引き継ぎが実物の V4 検証を通るか
-node tests/preflight-error-sweep.mjs     # 14 コマンド × 失敗の型（例外・エラー応答・時間切れ・不正な戻り値）
+# Verify against the host's real dsh-tools / dsh-commands (preflight before restarting)
+node tests/preflight-host-schema.mjs     # defineTool DSL and argument validation
+node tests/preflight-commands-host.mjs   # can the 14 commands be registered on the real CommandRuntime?
+node tests/preflight-commands-exec.mjs   # verify the execution path with the real dispatcher
+node tests/preflight-commands-exec.mjs --with-cli  # also run against the real CLI (read-only, a few credits)
+node tests/preflight-plugin-load.mjs     # actually load the shipped index.js and run through apply()
+node tests/preflight-message-source.mjs  # does the handover pass the real V4 validation?
+node tests/preflight-error-sweep.mjs     # 14 commands × failure types (exception, error response, timeout, invalid return value)
 
-# 実 CLI に対する統合テスト（ログイン済み環境が必要）
+# Integration tests against the real CLI (requires a signed-in environment)
 node tests/integration.mjs
-node tests/promoted-integration.mjs                    # 読み取り系のみ（無料）
-node tests/promoted-integration.mjs --with-generation  # 画像・音声生成（クレジット消費）
-node tests/promoted-integration.mjs --with-generation --with-video  # 動画生成（高コスト）
-node tests/commands-integration.mjs                    # 14 コマンド（読み取り系）
+node tests/promoted-integration.mjs                    # read-only tools only (free)
+node tests/promoted-integration.mjs --with-generation  # image and audio generation (credits are spent)
+node tests/promoted-integration.mjs --with-generation --with-video  # video generation (high cost)
+node tests/commands-integration.mjs                    # 14 commands (read-only tools)
 
-# DSH と同じ条件（親プロセスが Electron）での検証
+# Verify under the same conditions as DSH (parent process is Electron)
 $env:ELECTRON_RUN_AS_NODE='1'; & 'D:\deepseek\DeepSeek Harness.exe' tests/electron-runtime.mjs
 ```
 
-現状の結果: 単体 173 件 / ホスト プリフライト 432 チェック（すべて成功）。
+Current results: 173 unit tests / 432 host preflight checks (all passing).
 
-## 7. 配布形態
+## 7. Distribution
 
-ローカル開発用の非公開パッケージ（npm 未公開）。
-プロファイルへは `../install-to-profile.ps1`（`-Sync` / `-Uninstall`）で導入する
-（`node_modules/dsh-genspark` へコピーし、`dsh.profile.bundles` に登録。反映には DSH の再起動が必要）。
+A private package for local development (not published to npm).
+Install it into a profile with `../install-to-profile.ps1` (`-Sync` / `-Uninstall`)
+(it copies to `node_modules/dsh-genspark` and registers it in `dsh.profile.bundles`. DSH must be restarted for the change to take effect).
 
-### プロファイルの `dependencies` にも登録する理由
+### Why it is also registered in the profile's `dependencies`
 
-`bundles` だけでは plugin_manager の `listBundles()` が
-`installed = dependencies.includes(name)` で判定するため**未インストール扱い**になる
-（`removable` も false）。スクリプトは `pnpm add --lockfile-only file:./node_modules/dsh-genspark` を実行して
-`dependencies` と lockfile にもエントリを作る（`node_modules` の実体は動かさない）。
+With `bundles` alone, plugin_manager's `listBundles()` checks
+`installed = dependencies.includes(name)` and therefore treats the plugin as **not installed**
+(`removable` is also false). The script runs `pnpm add --lockfile-only file:./node_modules/dsh-genspark`
+to create entries in `dependencies` and in the lockfile as well (it does not move the files in `node_modules`).
 
-> DSH は `--profile desktop` を Electron 専用として CLI 操作を拒否するため、
-> desktop には `dsh plugin add` が使えない。そのため `pnpm` を直接呼んでいる。
+> DSH rejects CLI operations for `--profile desktop` because it is Electron-only,
+> so `dsh plugin add` cannot be used for desktop. That is why the script calls `pnpm` directly.
 
-## 変更履歴
+## Changelog
 
-- **0.1.14**: ソーシャル検索を実運用のフィードバック（2026-10-18 の実地メモ 2 本）に基づいて直した。
-  - **`get_post_with_comments` / `get_subreddit_with_posts` が空行になっていた**のを修正
-    （`{result:{post,comments}}` / `{result:{subreddit,posts}}` の入れ子を専用整形）。
-  - 投稿を**日付降順に並べ替え**（返却順が時系列でない action がある）。
-  - 失敗時は**日付を落として 1 回だけ自動再試行**（一時的な失敗が実測されたため）。
-    失敗文言も「未対応とは限らない」と分岐。
-  - `start_date` / `end_date` は `search_posts` にだけ送る（`get_posts_by_author` + 日付の失敗を回避）。
-  - `auto` の `@handle` を `get_user` から**その人の投稿**へ変更（`get_user` は id/名前しか返さない）。
-  - 空結果の生 JSON ダンプを定型文に、`limit` の切り口を「サーバー返却 N 件中 M 件」に明示。
-  - `language` 指定時に `lang` 一致の行へ絞る簡易フィルタ。
-  - 振り分けプロンプトに検索作法（1〜2 語 / `language=ja` / `subreddit` / 同一サービス 3 回まで）を追加。
-- **0.1.13**: ソーシャルメディア検索（X / Instagram / Reddit、計 30 API）を追加した。
-  - 型付きツール `genspark_x_search` / `genspark_instagram_search` / `genspark_reddit_search`
-    （`social` カテゴリ。`action` 省略時は `@handle`→プロフィール／それ以外→投稿検索を自動判定。
-    既定 25 件・投稿 URL 付きで整形、`raw: true` で生 JSON）。
-  - 振り分けコマンド `/genspark-social` `/genspark-x` `/genspark-instagram` `/genspark-reddit`。
-    コマンド自身は API を呼ばず、`promptFor` でモデルへ依頼を渡してサービスと action を選ばせる。
-  - グループ付きコマンドの解決（`gsk social twitter`）を `toolInvocation()` として実装し、
-    `genspark_run` からも gmail / box / jira / linkedin など 31 グループのツールを実行できるようにした。
-- **0.1.12**: 生成の失敗理由を日本語で案内するようにした。status: FAILURE +
-  「Content was rejected by the platform's safety policy…」（英語）がそのまま出ていたため、
-  safety / policy / rejected 系を「安全ポリシー（センシティブ判定）により拒否されました」と訳し、
-  対処（表現を弱める・入力画像を変える・別モデル）を添える。
-
-- **0.1.11**: 生成メディアの保存結果を正直に報告するようにした。ファイルが無いのに「状態: 成功」と
-  出ていたのを直し、`status` / `failure_reason` / `task_id` を表示して失敗ならエラーとして返す。
-  `genspark.ai` のファイル URL があるときは自前で取得して保存する（CLI の `-o` 失敗時の保険）。
-- **0.1.10**: 新しい会話で生成コマンドの受付メッセージが見えない問題を修正した。DSH は blank な
-  セッションでヒーロー画面を出し、`turn/start` が来るまでチャット欄（コマンド欄を含む）を覆う。
-  生成が終わるまで約 70 秒間なにも表示されなかった（2026-10-18 実機）。受付時に
-  `scheduleReceipt` で followup を 1 通送ってターンを起こし、ヒーローを解除する。
-  既存の会話では何もしない。**DSH 本体は変更しない**（プラグインだけで完結）。
-- **0.1.9**: 引き継ぎメッセージに `role: 'user'` と `id`（UUID）を付与した。0.1.8 までは
-  `{content, source}` だけを `agent.followup` へ渡しており、保存は通るが**次にセッションを開くときに
-  「session event at seq N lacks an identified message」で開けなくなる**（2026-10-18 実機で 2 セッションが破損）。
-  既存の壊れたログは `tools/repair-session.mjs`（ワークスペース直下）で修復できる。
-- **0.1.8**: 受付メッセージが `commandInlineWaitMs`（既定 2500）に引きずられ、0.1.7 の
-  「入力直後 150ms で返す」が実機で効いていなかったのを修正。生成・解析系は設定値に関わらず
-  最大 150ms で返す（0 以下なら従来どおり完了まで待つ）。
-- **0.1.7**: 生成・解析系のコマンドは**入力直後（150ms）に「Genspark に送信中です」**を返すようにした。
-  従来は 2.5 秒待ってから「実行中です」を返していたため、その間は無反応に見えていた。
-  150ms 以内に終わる検証エラーは従来どおりその場で返す。
-- **0.1.6**: コマンド欄の完了文言に生成種別ごとの待ち時間の目安を追加（画像 15〜40 秒 / 動画 1〜2 分 /
-  音声 30〜60 秒）。動画は実測で約 50 秒かかるため「止まった」と誤解されやすかった。
-  新規セッションの件は「遷移が終わる前の実行」であることを README / SKILL に反映。
-- **0.1.5**: 生成コマンドの**誤爆ガード**を追加。`/genspark-video 動画モデルのリスト` のような依頼で
-  生成（＝課金）されていた問題を修正し、モデル一覧・使い方を返すようにした（`lib/guard.js`）。
-  新しい会話でコマンドが動かない件はホスト側の仕様として README / SKILL に回避策を明記。
-- **0.1.4**: 生成モデル一覧を追加（`genspark_models` / `/genspark-models`。カタログ enum を実値で返す）。
-  モデル指定の enum 制約を外し、Genspark 側の追加・廃止に追随できるようにした。
-  README を人間向け（セットアップ・認証・コマンド）に整理し、詳細を SKILL.md へ分離。
-- **0.1.3**: `/genspark-vision` → **`/genspark-analyze-media`**、`genspark_vision` → **`genspark_analyze_media`**
-  に改名（音声・動画も扱うため `vision` は実態と合わない）。旧名のエイリアスは置かない。
-- **0.1.2**: 文字起こし結果の表示を修正。`full_text` が空のとき `segments` を本文として出す
-  （JSON 全体・`words` の単語別タイムスタンプを流していた）。
-- **0.1.1**: コマンドの添付ファイル対応（5 コマンド）。ホストは `input.attachments = true` を
-  宣言したコマンドにだけ添付を渡すため、未宣言だと送信時に拒否される。vision 系の結果は
-  一覧整形ではなく分析本文を表示するようにした。
-- **0.1.0**: 初版（`/genspark-model` を置き換え、既定の汎用モデルで画像・動画・音声を理解）。
+- **0.1.15**: The plugin is now English-first.
+  - Every model-facing and user-visible string is English: tool and parameter descriptions,
+    command descriptions/hints, follow-up prompts, result headings and labels, error messages,
+    `genspark_status` output and the catalog dump.
+  - `README.md` / `SKILL.md` rewritten in English; the Japanese originals are kept as
+    `README_ja.md` / `SKILL_ja.md`.
+  - Model-facing prompts no longer force a reply language: follow-ups and social routing ask for
+    "the same language the user is using".
+  - Japanese **input matching** is preserved (meta-intent guard for generation commands and the
+    `/genspark-models` kind aliases) via `\uXXXX` escapes, so the source stays ASCII-only without
+    losing protection for Japanese "list of video models" input.
+  - Number formatting switched to `en-US`; counts are pluralised (`1 result` / `2 results`).
+- **0.1.14**: Fixed social search based on feedback from real use (two field notes from 2026-10-18).
+  - Fixed **`get_post_with_comments` / `get_subreddit_with_posts` returning empty rows**
+    (dedicated formatting for the `{result:{post,comments}}` / `{result:{subreddit,posts}}` nesting).
+  - **Sorted posts by descending date** (some actions do not return items chronologically).
+  - On failure it **drops the dates and retries automatically once** (transient failures were observed).
+    The failure message also distinguishes "not necessarily unsupported".
+  - `start_date` / `end_date` are sent only to `search_posts` (avoiding the `get_posts_by_author` + date failure).
+  - `auto` for `@handle` now goes to **that user's posts** instead of `get_user` (`get_user` returns only id/name).
+  - Raw JSON dumps for empty results became a fixed message, and the `limit` cut is stated as
+    "M of N items returned by the server".
+  - A simple filter keeps only rows whose `lang` matches when `language` is specified.
+  - Added search practices to the routing prompt (1–2 words / `language=ja` / `subreddit` / up to 3 calls per service).
+- **0.1.13**: Added social media search (X / Instagram / Reddit, 30 APIs in total).
+  - Typed tools `genspark_x_search` / `genspark_instagram_search` / `genspark_reddit_search`
+    (`social` category. When `action` is omitted, `@handle` → profile and anything else → post search are detected
+    automatically. 25 items by default, formatted with post URLs; `raw: true` returns raw JSON).
+  - Routing commands `/genspark-social` `/genspark-x` `/genspark-instagram` `/genspark-reddit`.
+    The commands themselves call no API; `promptFor` passes the request to the model and lets it choose the service and action.
+  - Implemented resolution of grouped commands (`gsk social twitter`) as `toolInvocation()`,
+    and made tools from 31 groups such as gmail / box / jira / linkedin runnable from `genspark_run`.
+- **0.1.12**: Generation failure reasons are now explained. status: FAILURE +
+  "Content was rejected by the platform's safety policy…" (English) used to be shown as-is, so
+  safety / policy / rejected cases are now translated into "rejected by the safety policy (sensitive-content filter)",
+  with suggested fixes (soften the wording, change the input image, try another model).
+- **0.1.11**: Generation media save results are now reported honestly. It used to say "status: success"
+  even when there was no file; now `status` / `failure_reason` / `task_id` are shown and failures are returned as errors.
+  When a `genspark.ai` file URL exists, it is fetched and saved by the plugin itself (a fallback for CLI `-o` failures).
+- **0.1.10**: Fixed the problem where the acknowledgement message of generation commands was invisible in new conversations.
+  DSH shows a hero screen for a blank session and covers the chat area (including the command field) until
+  `turn/start` arrives. Nothing was displayed for about 70 seconds until generation finished (real machine, 2026-10-18).
+  On acknowledgement, `scheduleReceipt` sends one followup to start a turn and dismiss the hero.
+  Nothing is done in existing conversations. **DSH itself is not modified** (everything stays inside the plugin).
+- **0.1.9**: Added `role: 'user'` and an `id` (UUID) to the handover message. Up to 0.1.8 only
+  `{content, source}` was passed to `agent.followup`; saving succeeded, but **reopening the session later failed**
+  with "session event at seq N lacks an identified message" (two sessions were corrupted on a real machine, 2026-10-18).
+  Existing broken logs can be repaired with `tools/repair-session.mjs` (directly under the workspace).
+- **0.1.8**: Fixed the acknowledgement message being dragged by `commandInlineWaitMs` (default 2500),
+  which meant the 0.1.7 behaviour of "returning within 150 ms of input" did not work on real hardware.
+  Generation and analysis commands now return within at most 150 ms regardless of the setting
+  (0 or lower waits for completion as before).
+- **0.1.7**: Generation and analysis commands now **return "Sending to Genspark" immediately after input (150 ms)**.
+  Previously they waited 2.5 seconds before returning "running", which looked like no response during that time.
+  Validation errors that finish within 150 ms are still returned inline as before.
+- **0.1.6**: Added wait estimates per generation type to the command field's completion text
+  (images 15–40 s / video 1–2 min / audio 30–60 s). Videos take about 50 seconds in measurement, so they were
+  easily mistaken for a hang. The new-session issue was reflected in README / SKILL as "executed before the transition finished".
+- **0.1.5**: Added a **meta-intent guard** to generation commands. Fixed the problem where requests such as
+  `/genspark-video video model list` triggered a generation (and billing); it now returns the model list or usage
+  (`lib/guard.js`). Documented the workaround for commands not working in new conversations in README / SKILL as host behaviour.
+- **0.1.4**: Added the generation model list (`genspark_models` / `/genspark-models`, returning the catalog enum's real values).
+  Removed the enum constraint on model names so Genspark's additions and retirements can be followed.
+  Reorganised README for humans (setup, authentication, commands) and split the details into SKILL.md.
+- **0.1.3**: Renamed `/genspark-vision` → **`/genspark-analyze-media`** and `genspark_vision` →
+  **`genspark_analyze_media`** (since it also handles audio and video, `vision` did not match reality).
+  No aliases for the old names are provided.
+- **0.1.2**: Fixed the display of transcription results. When `full_text` is empty, `segments` is shown as the body
+  (it used to dump the whole JSON and the word-level timestamps in `words`).
+- **0.1.1**: Attachment support for commands (5 commands). The host passes attachments only to commands that declare
+  `input.attachments = true`, so sending is rejected without the declaration. Vision results now show the analysis body
+  instead of a list-style rendering.
+- **0.1.0**: Initial release (replaced `/genspark-model`; understands images, video, and audio with the default general-purpose model).

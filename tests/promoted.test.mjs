@@ -1,6 +1,6 @@
 /**
- * 昇格ツール（lib/promoted.js）の単体テスト。ホスト不要・ネットワーク不要。
- * 実行: node tests/promoted.test.mjs
+ * Unit tests for the promoted tools (lib/promoted.js). No host and no network required.
+ * Run: node tests/promoted.test.mjs
  */
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
@@ -10,7 +10,7 @@ import test from 'node:test';
 
 import { PROMOTED_CATEGORIES, PROMOTED_TOOLS, buildPromotedTools, describeSavedFile, detectFileFormat, promotedSummary, resolvePromotedCategories, mediaKindOf } from '../lib/promoted.js';
 
-/** defineTool を素通しさせて定義オブジェクトを集める。 */
+/** Let defineTool pass through so the definition objects can be collected. */
 function collect({ categories, runResult, calls, log } = {}) {
   const tools = buildPromotedTools({
     defineTool: (spec) => spec,
@@ -36,9 +36,9 @@ function collect({ categories, runResult, calls, log } = {}) {
 
 const EXEC = { agent: { session: { header: { cwd: process.cwd() } } } };
 
-// ── カテゴリ選択 ─────────────────────────────────────────────────────────────
+// ── Category selection ───────────────────────────────────────────────────────
 
-test('既定では検索・調査と生成メディアの 10 ツールを登録する', () => {
+test('by default it registers the 10 tools for search & research and generated media', () => {
   const tools = collect({});
   assert.equal(tools.length, 10);
   const names = tools.map((tool) => tool.name);
@@ -56,34 +56,34 @@ test('既定では検索・調査と生成メディアの 10 ツールを登録�
   ]);
 });
 
-test('カテゴリを絞ると該当ツールだけになる', () => {
+test('narrowing the categories leaves only the matching tools', () => {
   assert.equal(collect({ categories: ['search'] }).length, 6);
   assert.equal(collect({ categories: ['media'] }).length, 4);
   assert.equal(collect({ categories: [] }).length, 0);
 });
 
-test('未知のカテゴリは無視してログに出す', () => {
+test('unknown categories are ignored and logged', () => {
   const logs = [];
   const tools = collect({ categories: ['search', 'nope'], log: (message) => logs.push(message) });
   assert.equal(tools.length, 6);
-  assert.match(logs.join('\n'), /未知のカテゴリ "nope"/);
+  assert.match(logs.join('\n'), /ignoring unknown category "nope"/);
 });
 
-test('social カテゴリは 3 ツール（X / Instagram / Reddit）', () => {
+test('the social category has 3 tools (X / Instagram / Reddit)', () => {
   assert.ok(Object.hasOwn(PROMOTED_CATEGORIES, 'social'));
   assert.equal(PROMOTED_TOOLS.filter((spec) => spec.category === 'social').length, 3);
 });
 
 test('resolvePromotedCategories / promotedSummary', () => {
   assert.deepEqual([...resolvePromotedCategories(['media'])], ['media']);
-  assert.match(promotedSummary(['search', 'media']), /search=検索・調査 6 ツール/);
-  assert.match(promotedSummary(['search','media']), /media=生成メディア 4 ツール/);
-  assert.match(promotedSummary(['search']), /media=.*（無効）/);
+  assert.match(promotedSummary(['search', 'media']), /search=Search & research 6 tools/);
+  assert.match(promotedSummary(['search','media']), /media=Generated media 4 tools/);
+  assert.match(promotedSummary(['search']), /media=.*\(disabled\)/);
 });
 
-// ── 引数のマッピングと検証 ───────────────────────────────────────────────────
+// ── Argument mapping and validation ──────────────────────────────────────────
 
-test('web_search: q をそのまま渡し、--no-input とタイムアウトを付ける', async () => {
+test('web_search: passes q through as-is and adds --no-input and the timeout', async () => {
   const calls = [];
   const [tool] = collect({ categories: ['search'], calls });
   const text = await tool.execute({ q: 'latest AI news' }, EXEC);
@@ -95,15 +95,15 @@ test('web_search: q をそのまま渡し、--no-input とタイムアウトを�
   assert.match(text, /latest AI news/);
 });
 
-test('web_search: q 未指定はエラー文言を返し、CLI を起動しない', async () => {
+test('web_search: a missing q returns an error message and does not start the CLI', async () => {
   const calls = [];
   const [tool] = collect({ categories: ['search'], calls });
   const text = await tool.execute({}, EXEC);
-  assert.match(text, /q は必須です/);
+  assert.match(text, /q is required\./);
   assert.equal(calls.length, 0);
 });
 
-test('crawler: 未指定の任意引数は送らない', async () => {
+test('crawler: does not send optional arguments that were not specified', async () => {
   const calls = [];
   const tools = collect({ categories: ['search'], calls });
   const crawl = tools.find((tool) => tool.name === 'genspark_crawl');
@@ -111,20 +111,20 @@ test('crawler: 未指定の任意引数は送らない', async () => {
   assert.deepEqual(calls[0].toolArgs, { url: 'https://example.com', render_js: true });
 });
 
-test('crawler: URL でもファイルでもない値は日本語で案内し、CLI を起動しない', async () => {
-  // 実機で起きた事象: /genspark-crawl に日本語の質問を渡すと
-  // 「Genspark API エラー: No content found or crawler failed for …」になっていた。
+test('crawler: a value that is neither a URL nor a file returns guidance and does not start the CLI', async () => {
+  // Measured in practice: passing a free-text question (not a URL) to /genspark-crawl produced
+  // "Genspark API error: No content found or crawler failed for …".
   const calls = [];
   const tools = collect({ categories: ['search'], calls });
   const crawl = tools.find((tool) => tool.name === 'genspark_crawl');
-  const error = await crawl.execute({ url: 'これはテストです。昨日日本であった情報流出事件を教えてください' }, EXEC);
-  assert.match(error, /http\(s\) で始まる URL/);
+  const error = await crawl.execute({ url: 'this is a test. Tell me about the data leak that happened in Japan yesterday' }, EXEC);
+  assert.match(error, /http\(s\) URL or the path of an existing local file/);
   assert.match(error, /genspark-search/);
   assert.match(error, /genspark_run/);
   assert.equal(calls.length, 0);
 });
 
-test('crawler: 存在するローカルファイルのパスは通す（CLI が自動アップロードする）', async () => {
+test('crawler: accepts the path of an existing local file (the CLI uploads it automatically)', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'genspark-crawl-'));
   const file = join(dir, 'page.html');
   writeFileSync(file, '<p>hi</p>');
@@ -135,7 +135,7 @@ test('crawler: 存在するローカルファイルのパスは通す（CLI が�
   assert.deepEqual(calls[0].toolArgs, { url: file });
 });
 
-test('crawler: API が取得失敗を返したときも日本語の誘導を足す', async () => {
+test('crawler: adds the guidance even when the API reports a fetch failure', async () => {
   const tools = collect({
     categories: ['search'],
     runResult: {
@@ -144,50 +144,50 @@ test('crawler: API が取得失敗を返したときも日本語の誘導を足�
       stderr: '',
       stdout: JSON.stringify({
         status: 'error',
-        message: 'No content found or crawler failed for これはテストです Error: Error fetching URL',
+        message: 'No content found or crawler failed for this is a test Error: Error fetching URL',
       }),
     },
   });
   const crawl = tools.find((tool) => tool.name === 'genspark_crawl');
   const text = await crawl.execute({ url: 'https://example.com/missing' }, EXEC);
-  assert.match(text, /Genspark API エラー/);
+  assert.match(text, /Genspark API error/);
   assert.match(text, /web_search/);
 });
 
-test('summarize: URL でもファイルでもない値は日本語で案内し、CLI を起動しない', async () => {
+test('summarize: a value that is neither a URL nor a file returns guidance and does not start the CLI', async () => {
   const calls = [];
   const tools = collect({ categories: ['search'], calls });
   const summarize = tools.find((tool) => tool.name === 'genspark_summarize_document');
-  const error = await summarize.execute({ url: '昨日のニュースを要約して', question: '要点は？' }, EXEC);
-  assert.match(error, /http\(s\) で始まる URL/);
+  const error = await summarize.execute({ url: 'Summarize the news from yesterday', question: 'What are the key points?' }, EXEC);
+  assert.match(error, /http\(s\) URL or the path of an existing local file/);
   assert.equal(calls.length, 0);
 });
 
-test('maps_search: engine=maps は query 必須', async () => {
+test('maps_search: engine=maps requires query', async () => {
   const calls = [];
   const tools = collect({ categories: ['search'], calls });
   const maps = tools.find((tool) => tool.name === 'genspark_maps_search');
   const error = await maps.execute({ query_type: 'search', engine: 'maps' }, EXEC);
-  assert.match(error, /query（engine=maps のとき） は必須です/);
+  assert.match(error, /query \(when engine=maps\) is required/);
   assert.equal(calls.length, 0);
 
-  await maps.execute({ query_type: 'search', engine: 'maps', query: '東京駅のカフェ' }, EXEC);
-  assert.deepEqual(calls[0].toolArgs, { query_type: 'search', engine: 'maps', query: '東京駅のカフェ' });
+  await maps.execute({ query_type: 'search', engine: 'maps', query: 'cafes around Tokyo Station' }, EXEC);
+  assert.deepEqual(calls[0].toolArgs, { query_type: 'search', engine: 'maps', query: 'cafes around Tokyo Station' });
 });
 
-test('maps_search: engine=maps_directions は start_addr と end_addr 必須', async () => {
+test('maps_search: engine=maps_directions requires start_addr and end_addr', async () => {
   const tools = collect({ categories: ['search'] });
   const maps = tools.find((tool) => tool.name === 'genspark_maps_search');
-  assert.match(await maps.execute({ query_type: 'directions', engine: 'maps_directions', start_addr: '東京駅' }, EXEC), /end_addr/);
+  assert.match(await maps.execute({ query_type: 'directions', engine: 'maps_directions', start_addr: 'Tokyo Station' }, EXEC), /end_addr/);
 });
 
-test('generate_image: query か image_urls のどちらかが必要', async () => {
+test('generate_image: requires either query or image_urls', async () => {
   const tools = collect({ categories: ['media'] });
   const image = tools.find((tool) => tool.name === 'genspark_generate_image');
-  assert.match(await image.execute({ aspect_ratio: '1:1' }, EXEC), /query（生成内容の説明）か image_urls/);
+  assert.match(await image.execute({ aspect_ratio: '1:1' }, EXEC), /query \(a description of what to generate\) or image_urls/);
 });
 
-test('generate_image: 参照画像だけでも実行できる（image-to-image）', async () => {
+test('generate_image: can run with reference images alone (image-to-image)', async () => {
   const calls = [];
   const tools = collect({ categories: ['media'], calls });
   const image = tools.find((tool) => tool.name === 'genspark_generate_image');
@@ -195,7 +195,7 @@ test('generate_image: 参照画像だけでも実行できる（image-to-image�
   assert.deepEqual(calls[0].toolArgs, { image_urls: ['https://example.com/a.png'], aspect_ratio: 'auto' });
 });
 
-test('generate_image: save_to は絶対パスの -o オプションになり、保存結果を報告する', async () => {
+test('generate_image: save_to becomes an absolute-path -o option and the save result is reported', async () => {
   const calls = [];
   const tools = collect({ categories: ['media'], calls });
   const image = tools.find((tool) => tool.name === 'genspark_generate_image');
@@ -206,10 +206,10 @@ test('generate_image: save_to は絶対パスの -o オプションになり、�
   const text = await image.execute({ query: 'a red cube', save_to: target }, EXEC);
   assert.deepEqual(calls[0].options.toolArgs, ['-o', target]);
   assert.deepEqual(calls[0].toolArgs, { query: 'a red cube' });
-  assert.match(text, /保存ファイル: .*out\.png（5 バイト）/);
+  assert.match(text, /Saved file: .*out\.png \(5 bytes\)/);
 });
 
-test('generate_image: 相対の save_to はセッションの cwd 基準で解決する', async () => {
+test('generate_image: a relative save_to resolves against the session cwd', async () => {
   const calls = [];
   const tools = collect({ categories: ['media'], calls });
   const image = tools.find((tool) => tool.name === 'genspark_generate_image');
@@ -217,9 +217,9 @@ test('generate_image: 相対の save_to はセッションの cwd 基準で解�
   assert.deepEqual(calls[0].options.toolArgs, ['-o', join('C:\\work', 'out/a.png')]);
 });
 
-// ── 保存ファイルの形式判定 ───────────────────────────────────────────────────
+// ── Saved file format detection ──────────────────────────────────────────────
 
-/** 先頭バイトを指定してダミーファイルを作る。 */
+/** Create a dummy file with the specified leading bytes. */
 function writeBytes(name, bytes, tail = '') {
   const dir = mkdtempSync(join(tmpdir(), 'dsh-genspark-fmt-'));
   const path = join(dir, name);
@@ -230,140 +230,140 @@ function writeBytes(name, bytes, tail = '') {
 const JPEG_HEAD = [0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01];
 const PNG_HEAD = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
-test('describeSavedFile: 実体が JPEG なら .png の名前を .jpg に直して報告する（実機で発生）', () => {
+test('describeSavedFile: when the content is JPEG, renames .png to .jpg and reports it (measured in practice)', () => {
   const path = writeBytes('pic.png', JPEG_HEAD, 'rest');
   const text = describeSavedFile(path);
   const renamed = path.replace(/\.png$/, '.jpg');
-  assert.equal(existsSync(path), false, '元の .png は残さない');
-  assert.equal(existsSync(renamed), true, '実体に合った .jpg へ改名する');
-  assert.match(text, /保存ファイル: .*pic\.jpg（JPEG \/ 16 バイト）/);
-  assert.match(text, /実体が JPEG のため拡張子を修正/);
+  assert.equal(existsSync(path), false, 'the original .png is not kept');
+  assert.equal(existsSync(renamed), true, 'renames it to a .jpg that matches the content');
+  assert.match(text, /Saved file: .*pic\.jpg \(JPEG \/ 16 bytes\)/);
+  assert.match(text, /extension corrected because the actual content is JPEG/);
 });
 
-test('describeSavedFile: 拡張子が実体と合っていれば改名しない', () => {
+test('describeSavedFile: does not rename when the extension matches the content', () => {
   const path = writeBytes('pic.png', PNG_HEAD, 'rest');
   const text = describeSavedFile(path);
   assert.equal(existsSync(path), true);
-  assert.match(text, /保存ファイル: .*pic\.png（PNG \/ 12 バイト）$/);
+  assert.match(text, /Saved file: .*pic\.png \(PNG \/ 12 bytes\)$/);
 });
 
-test('describeSavedFile: 判定できない形式でも壊れない（形式は出さない）', () => {
+test('describeSavedFile: does not break on an undetectable format (does not print a format)', () => {
   const path = writeBytes('note.txt', [0x68, 0x65, 0x6c, 0x6c, 0x6f]);
   assert.equal(detectFileFormat(path), null);
-  assert.match(describeSavedFile(path), /保存ファイル: .*note\.txt（5 バイト）$/);
+  assert.match(describeSavedFile(path), /Saved file: .*note\.txt \(5 bytes\)$/);
 });
 
-test('describeSavedFile: 動画と音声の形式も判定する（ftyp / ID3）', () => {
+test('describeSavedFile: also detects video and audio formats (ftyp / ID3)', () => {
   const mp4 = writeBytes('clip.mp4', [0x00, 0x00, 0x00, 0x18], 'ftypisom');
   assert.equal(detectFileFormat(mp4).format, 'MP4');
   const mp3 = writeBytes('voice.mp3', [0x49, 0x44, 0x33], 'rest');
   assert.equal(detectFileFormat(mp3).format, 'MP3');
 });
 
-test('describeSavedFile: 存在しないファイルは確認できなかった旨を返す', () => {
+test('describeSavedFile: returns a message that existence could not be confirmed for a missing file', () => {
   const missing = join(tmpdir(), 'dsh-genspark-does-not-exist', 'x.png');
-  assert.match(describeSavedFile(missing), /存在を確認できませんでした/);
+  assert.match(describeSavedFile(missing), /existence could not be confirmed/);
 });
 
-test('generate_video: query と model は必須', async () => {
+test('generate_video: query and model are required', async () => {
   const calls = [];
   const tools = collect({ categories: ['media'], calls });
   const video = tools.find((tool) => tool.name === 'genspark_generate_video');
-  assert.match(await video.execute({ model: 'kling/v3' }, EXEC), /query は必須です/);
-  assert.match(await video.execute({ query: 'a cat surfing' }, EXEC), /model は必須です/);
+  assert.match(await video.execute({ model: 'kling/v3' }, EXEC), /query is required/);
+  assert.match(await video.execute({ query: 'a cat surfing' }, EXEC), /model is required/);
   assert.equal(calls.length, 0);
 
   await video.execute({ query: 'a cat surfing', model: 'kling/v3', audio_enable: true, duration: 5 }, EXEC);
   assert.deepEqual(calls[0].toolArgs, { query: 'a cat surfing', model: 'kling/v3', audio_enable: true, duration: 5 });
-  // 動画は長い下限（30 分）を持つ
+  // Video has a long floor (30 minutes)
   assert.deepEqual(calls[0].options.globalArgs, ['--output', 'json', '--timeout', '1800000', '--no-input']);
   assert.equal(calls[0].options.timeoutMs, 1800000);
 });
 
-test('generate_audio: prompt 必須・params は JSON のまま渡る', async () => {
+test('generate_audio: prompt is required and params are passed as JSON', async () => {
   const calls = [];
   const tools = collect({ categories: ['media'], calls });
   const audio = tools.find((tool) => tool.name === 'genspark_generate_audio');
-  assert.match(await audio.execute({}, EXEC), /prompt は必須です/);
-  await audio.execute({ prompt: 'こんにちは', model: 'alibaba/qwen-audio-3-tts', params: { speed: 1.1 } }, EXEC);
-  assert.deepEqual(calls[0].toolArgs, { prompt: 'こんにちは', model: 'alibaba/qwen-audio-3-tts', params: { speed: 1.1 } });
+  assert.match(await audio.execute({}, EXEC), /prompt is required/);
+  await audio.execute({ prompt: 'hello', model: 'alibaba/qwen-audio-3-tts', params: { speed: 1.1 } }, EXEC);
+  assert.deepEqual(calls[0].toolArgs, { prompt: 'hello', model: 'alibaba/qwen-audio-3-tts', params: { speed: 1.1 } });
 });
 
-test('analyze-media: media 必須、画像は understand_images、動画は analyze_media、音声は audio_transcribe', async () => {
+test('analyze-media: media is required; images use understand_images, video uses analyze_media, audio uses audio_transcribe', async () => {
   const calls = [];
   const tools = collect({ categories: ['media'], calls });
   const vision = tools.find((tool) => tool.name === 'genspark_analyze_media');
-  assert.match(await vision.execute({}, EXEC), /media は必須です/);
-  // URL は通す（画像）
+  assert.match(await vision.execute({}, EXEC), /media is required/);
+  // URLs are accepted (image)
   await vision.execute({ media: 'https://example.com/photo.jpg' }, EXEC);
   assert.equal(calls[0].toolName, 'understand_images');
-  assert.deepEqual(calls[0].toolArgs, { image_urls: ['https://example.com/photo.jpg'], instruction: 'このメディアの内容を日本語で詳しく説明してください。' });
+  assert.deepEqual(calls[0].toolArgs, { image_urls: ['https://example.com/photo.jpg'], instruction: 'Describe the content of this media in detail, in the same language the user is using.' });
   calls.length = 0;
-  // 動画拡張子は analyze_media
-  await vision.execute({ media: 'https://example.com/clip.mp4', instruction: '何が映っている？' }, EXEC);
+  // Video extensions go to analyze_media
+  await vision.execute({ media: 'https://example.com/clip.mp4', instruction: 'What is in the video?' }, EXEC);
   assert.equal(calls[0].toolName, 'analyze_media');
-  assert.deepEqual(calls[0].toolArgs, { media_urls: ['https://example.com/clip.mp4'], requirements: '何が映っている？' });
+  assert.deepEqual(calls[0].toolArgs, { media_urls: ['https://example.com/clip.mp4'], requirements: 'What is in the video?' });
   calls.length = 0;
-  // 音声拡張子は audio_transcribe
+  // Audio extensions go to audio_transcribe
   await vision.execute({ media: 'https://example.com/voice.mp3' }, EXEC);
   assert.equal(calls[0].toolName, 'audio_transcribe');
   assert.deepEqual(calls[0].toolArgs, { audio_urls: ['https://example.com/voice.mp3'] });
   calls.length = 0;
-  // 存在するローカル画像ファイル
+  // An existing local image file
   const dir = mkdtempSync(join(tmpdir(), 'genspark-analyze-media-'));
   const file = join(dir, 'test.jpg');
   writeFileSync(file, 'dummy');
-  await vision.execute({ media: file, instruction: '猫を数えて' }, EXEC);
+  await vision.execute({ media: file, instruction: 'Count the cats' }, EXEC);
   assert.equal(calls[0].toolName, 'understand_images');
-  assert.deepEqual(calls[0].toolArgs, { image_urls: [file], instruction: '猫を数えて' });
+  assert.deepEqual(calls[0].toolArgs, { image_urls: [file], instruction: 'Count the cats' });
 });
 
-test('analyze-media: URL でないローカルパスで存在しないものはエラー', async () => {
+test('analyze-media: errors on a nonexistent local path that is not a URL', async () => {
   const tools = collect({ categories: ['media'] });
   const vision = tools.find((tool) => tool.name === 'genspark_analyze_media');
-  assert.match(await vision.execute({ media: 'これはテストです' }, EXEC), /http\(s\) で始まる URL/);
+  assert.match(await vision.execute({ media: 'this is a test' }, EXEC), /http\(s\) URL or the path of an existing local file/);
 });
 
-test('analyze-media: media_list（コマンドの添付）は種類ごとに振り分ける', () => {
+test('analyze-media: media_list (command attachments) is routed by kind', () => {
   const spec = PROMOTED_TOOLS.find((tool) => tool.name === 'genspark_analyze_media');
-  const images = spec.build({ media_list: ['https://example.com/a.png', 'https://example.com/b.jpg'], instruction: '比較して' });
+  const images = spec.build({ media_list: ['https://example.com/a.png', 'https://example.com/b.jpg'], instruction: 'Compare them' });
   assert.equal(images.gsk, 'understand_images');
   assert.deepEqual(images.args, {
     image_urls: ['https://example.com/a.png', 'https://example.com/b.jpg'],
-    instruction: '比較して',
+    instruction: 'Compare them',
   });
 
-  const video = spec.build({ media_list: ['https://example.com/clip.mp4'], instruction: '何が映っている？' });
+  const video = spec.build({ media_list: ['https://example.com/clip.mp4'], instruction: 'What is in the video?' });
   assert.equal(video.gsk, 'analyze_media');
-  assert.deepEqual(video.args, { media_urls: ['https://example.com/clip.mp4'], requirements: '何が映っている？' });
+  assert.deepEqual(video.args, { media_urls: ['https://example.com/clip.mp4'], requirements: 'What is in the video?' });
 
   const audio = spec.build({ media_list: ['https://example.com/voice.mp3'] });
   assert.equal(audio.gsk, 'audio_transcribe');
   assert.deepEqual(audio.args, { audio_urls: ['https://example.com/voice.mp3'] });
 
-  // 画像が混ざっていれば画像として扱う（1 回の呼び出しで済ませる）
+  // If any image is mixed in, it is treated as images (finishes in a single call)
   const mixed = spec.build({ media_list: ['https://example.com/clip.mp4', 'https://example.com/a.png'] });
   assert.equal(mixed.gsk, 'understand_images');
   assert.deepEqual(mixed.args.image_urls, ['https://example.com/a.png']);
 });
 
-test('mediaKindOf: 拡張子で分類する（クエリ付き URL も可）', () => {
+test('mediaKindOf: classifies by extension (URLs with a query string work too)', () => {
   assert.equal(mediaKindOf('https://example.com/a.JPG'), 'image');
   assert.equal(mediaKindOf('https://example.com/v.mp4?token=abc'), 'video');
   assert.equal(mediaKindOf('https://example.com/a.m4a#t=1'), 'audio');
   assert.equal(mediaKindOf('C:\\tmp\\noext'), 'image');
 });
 
-test('extra は型付き引数を上書きしない（型付きが優先）', async () => {
+test('extra does not override typed arguments (typed arguments take precedence)', async () => {
   const calls = [];
   const [tool] = collect({ categories: ['search'], calls });
   await tool.execute({ q: 'typed', extra: { q: 'extra', limit: 5 } }, EXEC);
   assert.deepEqual(calls[0].toolArgs, { q: 'typed', limit: 5 });
 });
 
-// ── 実行結果の整形 ───────────────────────────────────────────────────────────
+// ── Formatting execution results ─────────────────────────────────────────────
 
-test('error エンベロープは失敗として整形される', async () => {
+test('an error envelope is formatted as a failure', async () => {
   const tools = collect({
     categories: ['search'],
     runResult: { code: 1, stdout: JSON.stringify({ status: 'error', message: 'quota exceeded', error_code: 'E_Q' }), stderr: '' },
@@ -374,18 +374,18 @@ test('error エンベロープは失敗として整形される', async () => {
   assert.match(text, /E_Q/);
 });
 
-test('CLI エントリ未検出はそのまま案内を返す', async () => {
+test('a missing CLI entry returns the guidance as-is', async () => {
   const tools = buildPromotedTools({
     defineTool: (spec) => spec,
     getConfig: () => ({}),
     runner: {
       async runTool() {
-        const error = new Error('CLI が見つかりません');
+        const error = new Error('The @genspark/cli entry was not found.');
         error.code = 'GSK_ENTRY_NOT_FOUND';
         throw error;
       },
     },
     categories: ['search'],
   });
-  assert.match(await tools[0].execute({ q: 'x' }, EXEC), /CLI が見つかりません/);
+  assert.match(await tools[0].execute({ q: 'x' }, EXEC), /@genspark\/cli entry was not found/);
 });

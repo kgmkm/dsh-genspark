@@ -1,12 +1,12 @@
 /**
- * ホストコマンド（lib/commands.js）の単体テスト。ホスト不要・ネットワーク不要。
- * 実行: node tests/commands.test.mjs
+ * Unit tests for the host commands (lib/commands.js). No host and no network required.
+ * Run: node tests/commands.test.mjs
  *
- * `@deepseek-ai/dsh-commands` の契約（asar 内の実装で確認）:
- *   - name は /^[a-z][a-z0-9_-]*$/
- *   - description は非空文字列
- *   - input を付けるなら { hint: 非空文字列 }
- *   - handler は { kind: 'success' | 'error', text } を返す
+ * The `@deepseek-ai/dsh-commands` contract (confirmed against the implementation inside the asar):
+ *   - name matches /^[a-z][a-z0-9_-]*$/
+ *   - description is a non-empty string
+ *   - when input is present it is { hint: non-empty string }
+ *   - handler returns { kind: 'success' | 'error', text }
  */
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -16,7 +16,7 @@ import test from 'node:test';
 
 import { autoSavePath, buildGensparkCommands, humanizeData } from '../lib/commands.js';
 
-/** ホスト側の既存コマンド名（これらと衝突すると登録時に throw する）。 */
+/** Existing host command names (registering one of them throws at registration time). */
 const HOST_COMMANDS = ['compact', 'permission', 'model', 'export', 'acp', 'acp-cache', 'feedback', 'goal', 'plan', 'file'];
 
 const FAKE_TOOLS = [
@@ -42,7 +42,7 @@ const FAKE_TOOLS = [
 
 const OK_ENVELOPE = (data) => ({ status: 'ok', message: 'success', data });
 
-/** テスト用のコマンド一式を組み立てる。 */
+/** Build a set of commands for tests. */
 function harness({ categories, runResult, tools = FAKE_TOOLS, catalogError, calls = [], config = {}, onRun, log, ctx } = {}) {
   const commands = buildGensparkCommands({
     ctx,
@@ -89,7 +89,7 @@ const inv = (rawInput, cwd = process.cwd(), agent = { session: { header: { cwd }
   agent,
 });
 
-/** 添付付きの invocation（agent に attachments サービスを持たせる）。 */
+/** Invocation with attachments (the agent has an attachments service). */
 const invAttached = (rawInput, blocks, store, cwd = process.cwd()) => ({
   rawInput,
   commandId: 'c2',
@@ -101,19 +101,19 @@ const invAttached = (rawInput, blocks, store, cwd = process.cwd()) => ({
   },
 });
 
-/** 画像 1 件の添付ブロック（ホストが渡す形）。 */
+/** One image attachment block (the shape the host passes). */
 const imageBlock = (id = 'sha256:img1', name = 'test_cat.jpg') => ({
   type: 'image',
   attachment: { attachmentId: id, mediaType: 'image/jpeg', name },
 });
 
-/** ファイル 1 件の添付ブロック（ホストが渡す形）。 */
+/** One file attachment block (the shape the host passes). */
 const fileBlock = (id = 'sha256:doc1', name = 'doc.pdf') => ({
   type: 'file',
   attachment: { attachmentId: id, mediaType: 'application/pdf', name },
 });
 
-/** followup を受け取る擬似エージェント（受け取った message を seen に積む）。 */
+/** Pseudo-agent that receives follow-ups (pushes every message into seen). */
 const followupAgent = (seen, cwd = process.cwd()) => ({
   session: { header: { cwd } },
   followup(message) {
@@ -122,8 +122,8 @@ const followupAgent = (seen, cwd = process.cwd()) => ({
 });
 
 /**
- * 新しい会話（ログに turn/start が無い）を模したエージェント。
- * セッションはヒーロー画面の判定に使う `snapshotEvents` だけを持つ。
+ * Agent that mimics a new conversation (the log has no turn/start).
+ * The session only has `snapshotEvents`, which is used to detect the hero screen.
  */
 const freshAgent = (seen, events = [{ type: 'session' }, { type: 'command/run' }]) => ({
   session: { header: { cwd: process.cwd() }, snapshotEvents: () => events },
@@ -133,16 +133,16 @@ const freshAgent = (seen, events = [{ type: 'session' }, { type: 'command/run' }
 });
 
 /**
- * 引き継ぎはコマンド完了を待たせないよう次のティックへ遅らせているため、
- * 検証前に 1 ティック進める（実機で「コマンドが完了しない」状態を避けるための設計）。
+ * Follow-ups are deferred to the next tick so command completion is not blocked;
+ * advance one tick before asserting (a design choice that avoids the "command never completes" state seen on real hardware).
  */
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 const okData = (text) => ({ code: 0, stdout: JSON.stringify(OK_ENVELOPE(text)), stderr: '', ok: true });
 
-// ── 登録されるコマンド ───────────────────────────────────────────────────────
+// -- Registered commands ------------------------------------------------------
 
-test('既定では汎用 4 + 検索・調査 6 + 生成メディア 4 の 14 コマンドを返す', () => {
+test('returns 14 commands by default: 4 generic + 6 search & research + 4 generated media', () => {
   const { commands } = harness({});
   assert.equal(commands.length, 14);
   assert.deepEqual(
@@ -166,7 +166,7 @@ test('既定では汎用 4 + 検索・調査 6 + 生成メディア 4 の 14 コ
   );
 });
 
-test('カテゴリを絞ると該当コマンドだけになる（汎用 4 は常時）', () => {
+test('narrowing categories leaves only the matching commands (the 4 generic commands are always present)', () => {
   assert.equal(harness({ categories: ['search'] }).commands.length, 10);
   assert.equal(harness({ categories: ['media'] }).commands.length, 8);
   assert.equal(harness({ categories: [] }).commands.length, 4);
@@ -175,7 +175,7 @@ test('カテゴリを絞ると該当コマンドだけになる（汎用 4 は�
   assert.equal(byName.has('genspark-search'), true);
 });
 
-test('未知のカテゴリは無視してログに出す', () => {
+test('ignores unknown categories and logs them', () => {
   const logs = [];
   const commands = buildGensparkCommands({
     getConfig: () => ({ promotedCategories: ['search', 'nope'] }),
@@ -184,43 +184,43 @@ test('未知のカテゴリは無視してログに出す', () => {
     log: (message) => logs.push(message),
   });
   assert.equal(commands.length, 10);
-  assert.match(logs.join('\n'), /未知のカテゴリ "nope"/);
+  assert.match(logs.join('\n'), /ignoring unknown category "nope"/);
 });
 
-test('コマンドのメタデータが dsh-commands の契約を満たす', () => {
+test('command metadata satisfies the dsh-commands contract', () => {
   const { commands } = harness({});
   for (const command of commands) {
     assert.match(command.name, /^[a-z][a-z0-9_-]*$/, command.name);
-    assert.equal(HOST_COMMANDS.includes(command.name), false, `${command.name} はホストの既存コマンドと衝突する`);
+    assert.equal(HOST_COMMANDS.includes(command.name), false, `${command.name} collides with an existing host command`);
     assert.equal(typeof command.description, 'string');
-    assert.ok(command.description.trim().length > 0, `${command.name} の description が空`);
+    assert.ok(command.description.trim().length > 0, `${command.name} has an empty description`);
     assert.equal(typeof command.handler, 'function');
     if (command.input !== undefined) {
       assert.equal(typeof command.input.hint, 'string');
-      assert.ok(command.input.hint.trim().length > 0, `${command.name} の hint が空`);
+      assert.ok(command.input.hint.trim().length > 0, `${command.name} has an empty hint`);
     }
   }
-  // 引数が要らないのは /genspark（状態表示）だけ
+  // Only /genspark (status display) takes no arguments
   const withInput = commands.filter((command) => command.input !== undefined).map((command) => command.name);
   assert.equal(withInput.includes('genspark'), false);
   assert.equal(withInput.length, 13);
 });
 
-test('添付を受け取るコマンドだけ input.attachments=true を宣言する', () => {
+test('only commands that accept attachments declare input.attachments=true', () => {
   const { byName } = harness({});
   const accepting = ['genspark-analyze-media', 'genspark-summarize', 'genspark-crawl', 'genspark-image', 'genspark-video'];
   for (const name of accepting) {
-    assert.equal(byName.get(name).input?.attachments, true, `${name} が添付を受け取れない`);
+    assert.equal(byName.get(name).input?.attachments, true, `${name} does not accept attachments`);
   }
   for (const command of harness({}).commands) {
     if (accepting.includes(command.name)) continue;
-    assert.notEqual(command.input?.attachments, true, `${command.name} は添付を受け取らないはず`);
+    assert.notEqual(command.input?.attachments, true, `${command.name} should not accept attachments`);
   }
 });
 
-// ── 昇格ツール由来のコマンド ─────────────────────────────────────────────────
+// -- Commands derived from promoted tools ------------------------------------
 
-test('genspark-search は web_search を --args-file 経由で実行する', async () => {
+test('genspark-search runs web_search through --args-file', async () => {
   const { byName, calls } = harness({});
   const result = await byName.get('genspark-search').handler(inv('DeepSeek Harness'));
   assert.equal(result.kind, 'success');
@@ -228,51 +228,51 @@ test('genspark-search は web_search を --args-file 経由で実行する', asy
   assert.deepEqual(calls[0].toolArgs, { q: 'DeepSeek Harness' });
   assert.deepEqual(calls[0].options.globalArgs, ['--output', 'json', '--timeout', '600000', '--no-input']);
   assert.equal(calls[0].options.cwd, process.cwd());
-  assert.match(result.text, /（tool: web_search）/);
+  assert.match(result.text, /\(tool: web_search\)/);
 });
 
-test('入力が空なら実行せずエラーを返す', async () => {
+test('returns an error without running when the input is empty', async () => {
   const { byName, calls } = harness({});
   const result = await byName.get('genspark-search').handler(inv('   '));
   assert.equal(result.kind, 'error');
-  assert.match(result.text, /入力が必要です。使い方: \/genspark-search/);
+  assert.match(result.text, /Input is required\. Usage: \/genspark-search/);
   assert.equal(calls.length, 0);
 });
 
-test('genspark-crawl は URL でない入力（日本語の質問）を実行前に日本語で案内する', async () => {
-  // 実機で起きた事象の再現防止: /genspark-crawl に質問文を渡すと
-  // 「Genspark API エラー: No content found or crawler failed for …」になっていた。
+test('genspark-crawl rejects non-URL input (a natural-language question) before running', async () => {
+  // Regression guard for a real incident: passing a question to /genspark-crawl made it fail with
+  // "Genspark API error: No content found or crawler failed for ...".
   const { byName, calls } = harness({});
-  const result = await byName.get('genspark-crawl').handler(inv('これはテストです。昨日日本であった情報流出事件を教えてください'));
+  const result = await byName.get('genspark-crawl').handler(inv('\u3053\u308c\u306f\u30c6\u30b9\u30c8\u3067\u3059\u3002\u6628\u65e5\u65e5\u672c\u3067\u3042\u3063\u305f\u60c5\u5831\u6d41\u51fa\u4e8b\u4ef6\u3092\u6559\u3048\u3066\u304f\u3060\u3055\u3044'));
   assert.equal(result.kind, 'error');
-  assert.match(result.text, /http\(s\) で始まる URL/);
+  assert.match(result.text, /must be an http\(s\) URL or the path of an existing local file/);
   assert.match(result.text, /\/genspark-search/);
   assert.equal(calls.length, 0);
 });
 
-test('検索結果は一覧として整形される（JSON をそのまま出さない）', async () => {
+test('search results are formatted as a list (raw JSON is not printed)', async () => {
   const { byName } = harness({
     runResult: okData({
       organic_results: [
-        { title: 'DeepSeek Harness の紹介', url: 'https://example.com/a', snippet: 'プラグインの作り方' },
-        { title: '2 件目', url: 'https://example.com/b' },
+        { title: 'Introducing DeepSeek Harness', url: 'https://example.com/a', snippet: 'How to build a plugin' },
+        { title: 'Second item', url: 'https://example.com/b' },
       ],
       related_searches: ['dsh plugin', 'cordis'],
     }),
   });
   const result = await byName.get('genspark-search').handler(inv('dsh'));
   assert.equal(result.kind, 'success');
-  assert.match(result.text, /organic_results: 2 件（先頭 2 件を表示）/);
-  assert.match(result.text, /1\. DeepSeek Harness の紹介\n   https:\/\/example\.com\/a\n   プラグインの作り方/);
+  assert.match(result.text, /organic_results: 2 items \(showing the first 2\)/);
+  assert.match(result.text, /1\. Introducing DeepSeek Harness\n   https:\/\/example\.com\/a\n   How to build a plugin/);
   assert.match(result.text, /related_searches: dsh plugin \/ cordis/);
   assert.equal(result.text.includes('"title"'), false);
 });
 
-test('genspark-image は genspark-out へ保存し、保存結果を報告する', async () => {
+test('genspark-image saves under genspark-out and reports the saved file', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'dsh-genspark-cmd-'));
   const { byName, calls } = harness({
     onRun: async ({ options }) => {
-      // CLI の -o の代わりに成果物を作る
+      // Create the artifact instead of the CLI's -o flag
       const path = options.toolArgs[options.toolArgs.indexOf('-o') + 1];
       writeFileSync(path, '12345');
       return okData({ images: [{ url: 'https://example.com/i.png' }] });
@@ -280,17 +280,17 @@ test('genspark-image は genspark-out へ保存し、保存結果を報告する
   });
   const result = await byName.get('genspark-image').handler(inv('a red cube', cwd));
   assert.equal(result.kind, 'success');
-  // save_to は Genspark の引数ではなく CLI の -o オプションになる
+  // save_to is not a Genspark argument; it becomes the CLI's -o option
   assert.deepEqual(calls[0].toolArgs, { query: 'a red cube' });
   const out = calls[0].options.toolArgs;
   assert.equal(out[0], '-o');
   const savedPath = out[1];
   assert.ok(savedPath.startsWith(join(cwd, 'genspark-out')), savedPath);
   assert.match(savedPath, /\.png$/);
-  assert.match(result.text, /保存ファイル: .*（5 バイト）/);
+  assert.match(result.text, /Saved file: .*\(5 bytes\)/);
 });
 
-test('genspark-video は既定モデルと 30 分のタイムアウト下限を使う', async () => {
+test('genspark-video uses the default model and a 30-minute timeout floor', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'dsh-genspark-cmd-'));
   const { byName, calls } = harness({});
   await byName.get('genspark-video').handler(inv('a drone shot', cwd));
@@ -300,72 +300,72 @@ test('genspark-video は既定モデルと 30 分のタイムアウト下限を�
   assert.deepEqual(calls[0].options.globalArgs, ['--output', 'json', '--timeout', '1800000', '--no-input']);
 });
 
-// ── 誤爆ガード（生成コマンドにモデル一覧・使い方を書いても課金しない） ────────────
+// -- Meta-intent guard (typing a model list / usage into a generation command spends no credits) --
 
 const withModelTools = () => harness({ tools: [...FAKE_TOOLS, ...MODEL_TOOLS] });
 const ranTool = (calls) => calls.some((call) => typeof call.toolName === 'string');
 
-test('生成コマンドはモデル一覧の依頼を生成せずにモデル一覧で返す', async () => {
+test('generation commands return the model list for a model-list request instead of generating', async () => {
   const { byName, calls } = withModelTools();
-  const video = await byName.get('genspark-video').handler(inv('動画モデルのリストください'));
-  assert.equal(ranTool(calls), false, 'モデル一覧の依頼で生成ツールが実行された');
+  const video = await byName.get('genspark-video').handler(inv('\u52d5\u753b\u30e2\u30c7\u30eb\u306e\u30ea\u30b9\u30c8\u304f\u3060\u3055\u3044'));
+  assert.equal(ranTool(calls), false, 'a generation tool ran for a model-list request');
   assert.equal(video.kind, 'success');
-  assert.match(video.text, /生成は行っていません/);
+  assert.match(video.text, /Nothing was generated \(no credits were spent\)\./);
   assert.match(video.text, /kling\/v3/);
 
-  const audio = await byName.get('genspark-audio').handler(inv('使える音声モデルを教えて'));
+  const audio = await byName.get('genspark-audio').handler(inv('\u4f7f\u3048\u308b\u97f3\u58f0\u30e2\u30c7\u30eb\u3092\u6559\u3048\u3066'));
   assert.equal(ranTool(calls), false);
   assert.match(audio.text, /elevenlabs\/v4-tts/);
 });
 
-test('生成コマンドは「使い方」でクレジットを消費しない', async () => {
+test('generation commands spend no credits for a usage request', async () => {
   const { byName, calls } = withModelTools();
-  const result = await byName.get('genspark-image').handler(inv('使い方'));
-  assert.equal(ranTool(calls), false, '「使い方」で生成ツールが実行された');
+  const result = await byName.get('genspark-image').handler(inv('\u4f7f\u3044\u65b9'));
+  assert.equal(ranTool(calls), false, 'a generation tool ran for a usage request');
   assert.equal(result.kind, 'success');
-  assert.match(result.text, /\/genspark-image の使い方/);
-  assert.match(result.text, /クレジットは消費していません/);
+  assert.match(result.text, /\/genspark-image usage/);
+  assert.match(result.text, /No credits were spent \(nothing was generated\)\./);
 });
 
-test('「モデル」を含む通常の生成依頼はガードせず生成する', async () => {
+test('a normal generation request that mentions "model" is generated without the guard', async () => {
   const { byName, calls } = withModelTools();
-  await byName.get('genspark-video').handler(inv('モデルのような女性が歩く動画'));
+  await byName.get('genspark-video').handler(inv('\u30e2\u30c7\u30eb\u306e\u3088\u3046\u306a\u5973\u6027\u304c\u6b69\u304f\u52d5\u753b'));
   assert.equal(calls[0].toolName, 'video_generation');
-  assert.equal(calls[0].toolArgs.query, 'モデルのような女性が歩く動画');
+  assert.equal(calls[0].toolArgs.query, '\u30e2\u30c7\u30eb\u306e\u3088\u3046\u306a\u5973\u6027\u304c\u6b69\u304f\u52d5\u753b');
 });
 
-test('添付があるときはモデル一覧の文言でも生成する（生成対象が明確なため）', async () => {
+test('with an attachment, even model-list wording generates (the target is clear)', async () => {
   const { byName, calls } = withModelTools();
   const store = { imageHostPath: () => 'C:\\tmp\\ref.png' };
-  await byName.get('genspark-video').handler(invAttached('モデルのリスト', [imageBlock('sha256:i3', 'ref.png')], store));
+  await byName.get('genspark-video').handler(invAttached('\u30e2\u30c7\u30eb\u306e\u30ea\u30b9\u30c8', [imageBlock('sha256:i3', 'ref.png')], store));
   assert.equal(calls[0].toolName, 'video_generation');
   assert.deepEqual(calls[0].toolArgs.image_urls, ['C:\\tmp\\ref.png']);
 });
 
-test('genspark-summarize は URL だけでも既定の質問で実行できる', async () => {
+test('genspark-summarize runs with the default question when only a URL is given', async () => {
   const { byName, calls } = harness({});
   await byName.get('genspark-summarize').handler(inv('https://example.com/doc.pdf'));
   assert.deepEqual(calls[0].toolArgs, {
     url: 'https://example.com/doc.pdf',
-    question: 'この文書の要点を日本語で簡潔にまとめてください。',
+    question: 'Summarize the key points of this document concisely.',
   });
   calls.length = 0;
-  await byName.get('genspark-summarize').handler(inv('https://example.com/doc.pdf 何が書いてある？'));
-  assert.deepEqual(calls[0].toolArgs, { url: 'https://example.com/doc.pdf', question: '何が書いてある？' });
+  await byName.get('genspark-summarize').handler(inv('https://example.com/doc.pdf What does it say?'));
+  assert.deepEqual(calls[0].toolArgs, { url: 'https://example.com/doc.pdf', question: 'What does it say?' });
 });
 
-test('genspark-maps / genspark-analyze-media の引数変換', async () => {
+test('argument conversion for genspark-maps / genspark-analyze-media', async () => {
   const { byName, calls } = harness({});
-  await byName.get('genspark-maps').handler(inv('東京駅周辺のカフェ'));
-  assert.deepEqual(calls[0].toolArgs, { query_type: 'search', engine: 'maps', query: '東京駅周辺のカフェ' });
-  await byName.get('genspark-analyze-media').handler(inv('https://example.com/cat.jpg この猫は何をしている？'));
-  assert.deepEqual(calls[1].toolArgs, { image_urls: ['https://example.com/cat.jpg'], instruction: 'この猫は何をしている？' });
+  await byName.get('genspark-maps').handler(inv('cafes around Tokyo Station'));
+  assert.deepEqual(calls[0].toolArgs, { query_type: 'search', engine: 'maps', query: 'cafes around Tokyo Station' });
+  await byName.get('genspark-analyze-media').handler(inv('https://example.com/cat.jpg What is this cat doing?'));
+  assert.deepEqual(calls[1].toolArgs, { image_urls: ['https://example.com/cat.jpg'], instruction: 'What is this cat doing?' });
   await byName.get('genspark-analyze-media').handler(inv('https://example.com/clip.mp4'));
-  assert.deepEqual(calls[2].toolArgs, { media_urls: ['https://example.com/clip.mp4'], requirements: 'このメディアの内容を日本語で詳しく説明してください。' });
+  assert.deepEqual(calls[2].toolArgs, { media_urls: ['https://example.com/clip.mp4'], requirements: 'Describe the contents of this media in detail.' });
   assert.equal(calls[2].toolName, 'analyze_media');
 });
 
-test('API エラーはエラー結果として返る', async () => {
+test('API errors are returned as error results', async () => {
   const { byName } = harness({
     runResult: {
       code: 0,
@@ -376,10 +376,10 @@ test('API エラーはエラー結果として返る', async () => {
   });
   const result = await byName.get('genspark-search').handler(inv('x'));
   assert.equal(result.kind, 'error');
-  assert.match(result.text, /Genspark API エラー: rate limited/);
+  assert.match(result.text, /Genspark API error: rate limited/);
 });
 
-test('abort された signal は runner へ渡る', async () => {
+test('an aborted signal is forwarded to the runner', async () => {
   const controller = new AbortController();
   const { byName, calls } = harness({});
   const invocation = { ...inv('x'), signal: controller.signal };
@@ -387,27 +387,27 @@ test('abort された signal は runner へ渡る', async () => {
   assert.equal(calls[0].options.signal, controller.signal);
 });
 
-// ── /genspark-tools ─────────────────────────────────────────────────────────
+// -- /genspark-tools ---------------------------------------------------------
 
-test('genspark-tools は引数なしでグループ一覧を返す', async () => {
+test('genspark-tools returns the group overview with no arguments', async () => {
   const { byName, calls } = harness({});
   const result = await byName.get('genspark-tools').handler(inv(''));
   assert.equal(result.kind, 'success');
-  assert.match(result.text, /Genspark ツールカタログ: 全 3 ツール/);
-  assert.match(result.text, /## グループ別件数/);
+  assert.match(result.text, /Genspark tool catalog: 3 tools in total/);
+  assert.match(result.text, /## Counts by group/);
   assert.equal(calls[0].catalog.refresh, false);
 });
 
-test('genspark-tools は 1 件に絞れると引数の完全スキーマを返す', async () => {
+test('genspark-tools returns the full argument schema when narrowed to one tool', async () => {
   const { byName } = harness({});
   const result = await byName.get('genspark-tools').handler(inv('web_search'));
   assert.equal(result.kind, 'success');
   assert.match(result.text, /## web_search/);
-  assert.match(result.text, /- q \(必須\): string — query/);
-  assert.match(result.text, /実行例: \/genspark-run web_search/);
+  assert.match(result.text, /- q \(required\): string \u2014 query/);
+  assert.match(result.text, /Example: \/genspark-run web_search/);
 });
 
-test('genspark-tools は名前の完全一致を最優先で 1 件に絞る', async () => {
+test('genspark-tools prioritizes an exact name match and narrows to one tool', async () => {
   const tools = [
     { name: 'crawler', description: 'Crawl a page', cli: { aliases: ['crawl'] }, parameters: { properties: { url: { type: 'string' } }, required: ['url'] } },
     { name: 'deep_crawl', description: 'Crawler for whole sites', cli: {}, parameters: { properties: {} } },
@@ -416,27 +416,27 @@ test('genspark-tools は名前の完全一致を最優先で 1 件に絞る', as
   const result = await byName.get('genspark-tools').handler(inv('crawler'));
   assert.equal(result.kind, 'success');
   assert.match(result.text, /## crawler\b/);
-  assert.doesNotMatch(result.text, /グループ別件数/);
+  assert.doesNotMatch(result.text, /Counts by group/);
 });
 
-test('genspark-tools --refresh はキャッシュ更新を要求する', async () => {
+test('genspark-tools --refresh requests a cache refresh', async () => {
   const { byName, calls } = harness({});
   const result = await byName.get('genspark-tools').handler(inv('--refresh crawler'));
   assert.equal(result.kind, 'success');
   assert.equal(calls[0].catalog.refresh, true);
-  assert.match(result.text, /## crawler|該当なし/);
+  assert.match(result.text, /## crawler|No matches/);
 });
 
-test('カタログが取れないときはエラーを返す', async () => {
-  const { byName } = harness({ catalogError: new Error('カタログを取得できませんでした（exit code: 1）') });
+test('returns an error when the catalog cannot be loaded', async () => {
+  const { byName } = harness({ catalogError: new Error('Could not retrieve the catalog (exit code: 1)') });
   const result = await byName.get('genspark-tools').handler(inv(''));
   assert.equal(result.kind, 'error');
-  assert.match(result.text, /カタログを取得できませんでした/);
+  assert.match(result.text, /Could not load the catalog/);
 });
 
-// ── /genspark-run ───────────────────────────────────────────────────────────
+// -- /genspark-run -----------------------------------------------------------
 
-test('genspark-run は読み取り専用で任意ツールを実行する', async () => {
+test('genspark-run runs an arbitrary tool read-only', async () => {
   const { byName, calls } = harness({});
   const result = await byName.get('genspark-run').handler(inv('web_search {"q":"dsh"}'));
   assert.equal(result.kind, 'success');
@@ -445,32 +445,32 @@ test('genspark-run は読み取り専用で任意ツールを実行する', asyn
   assert.deepEqual(calls[1].options.globalArgs, ['--output', 'json', '--timeout', '600000', '--no-input']);
 });
 
-test('genspark-run は引数なしなら使い方を返す', async () => {
+test('genspark-run shows usage when no arguments are given', async () => {
   const { byName, calls } = harness({});
   const result = await byName.get('genspark-run').handler(inv(''));
   assert.equal(result.kind, 'error');
-  assert.match(result.text, /使い方: \/genspark-run <ツール名> \[JSON引数\]/);
+  assert.match(result.text, /Usage: \/genspark-run <tool-name> \[JSON arguments\]/);
   assert.equal(calls.length, 0);
 });
 
-test('genspark-run は壊れた JSON を実行前に拒否する', async () => {
+test('genspark-run rejects broken JSON before running', async () => {
   const { byName, calls } = harness({});
   const result = await byName.get('genspark-run').handler(inv('web_search {q:dsh}'));
   assert.equal(result.kind, 'error');
-  assert.match(result.text, /引数の JSON を解釈できませんでした/);
+  assert.match(result.text, /Could not parse the JSON arguments/);
   assert.equal(calls.length, 0);
 });
 
-test('genspark-run は存在しないツールを拒否する', async () => {
+test('genspark-run rejects a nonexistent tool', async () => {
   const { byName, calls } = harness({});
   const result = await byName.get('genspark-run').handler(inv('nope_tool {}'));
   assert.equal(result.kind, 'error');
-  assert.match(result.text, /Genspark に "nope_tool" というツールはありません/);
-  assert.match(result.text, /CLI 内蔵の読み取りコマンド me は実行できます/);
+  assert.match(result.text, /Genspark has no tool named "nope_tool"/);
+  assert.match(result.text, /CLI built-in read-only commands me can be run/);
   assert.equal(calls.filter((call) => call.toolName).length, 0);
 });
 
-test('genspark-run はカタログに載らない読み取り専用の内蔵コマンド（me）を実行できる', async () => {
+test('genspark-run can run the read-only built-in command (me) that is not in the catalog', async () => {
   const { byName, calls } = harness({ runResult: okData({ email: 'backorz@gmail.com' }) });
   const result = await byName.get('genspark-run').handler(inv('me'));
   assert.equal(result.kind, 'success');
@@ -478,22 +478,22 @@ test('genspark-run はカタログに載らない読み取り専用の内蔵コ�
   assert.deepEqual(calls[1].toolArgs, {});
 });
 
-test('genspark-run は対話必須・要確認の操作を実行しない', async () => {
+test('genspark-run does not run interactive or confirmation-required operations', async () => {
   const { byName, calls } = harness({});
   const interactive = await byName.get('genspark-run').handler(inv('x_post_tweet {}'));
   assert.equal(interactive.kind, 'error');
-  assert.match(interactive.text, /対話必須の操作/);
+  assert.match(interactive.text, /requires interactive input/);
 
   const gated = await byName.get('genspark-run').handler(inv('slack_send {}'));
   assert.equal(gated.kind, 'error');
-  assert.match(gated.text, /確認が必要な操作です/);
-  assert.match(gated.text, /genspark_run ツール（approve_write: true）/);
+  assert.match(gated.text, /requires confirmation/);
+  assert.match(gated.text, /genspark_run tool \(approve_write: true\)/);
   assert.equal(calls.filter((call) => call.toolName).length, 0);
 });
 
-// ── 添付ファイル（コンポーザの画像・ファイル） ─────────────────────────────
+// -- Attachments (composer images / files) -----------------------------------
 
-test('genspark-analyze-media は添付画像をホストパスへ解決して understand_images に渡す', async () => {
+test('genspark-analyze-media resolves attached images to host paths and passes them to understand_images', async () => {
   const { byName, calls } = harness({});
   const store = { imageHostPath: () => 'C:\\tmp\\test_cat.jpg' };
   const result = await byName.get('genspark-analyze-media').handler(invAttached('', [imageBlock()], store));
@@ -501,18 +501,19 @@ test('genspark-analyze-media は添付画像をホストパスへ解決して un
   assert.equal(calls[0].toolName, 'understand_images');
   assert.deepEqual(calls[0].toolArgs, {
     image_urls: ['C:\\tmp\\test_cat.jpg'],
-    instruction: 'このメディアの内容を日本語で詳しく説明してください。',
+    instruction: 'Describe the contents of this media in detail.',
   });
 });
 
-test('genspark-analyze-media は添付＋指示文を指示として渡す（入力はメディア指定として解釈しない）', async () => {
+test('genspark-analyze-media passes an attachment plus instruction text as the instruction (the input is not interpreted as a media reference)', async () => {
   const { byName, calls } = harness({});
   const store = { imageHostPath: () => 'C:\\tmp\\a.jpg' };
-  await byName.get('genspark-analyze-media').handler(invAttached('この猫は何をしている？', [imageBlock()], store));
-  assert.deepEqual(calls[0].toolArgs, { image_urls: ['C:\\tmp\\a.jpg'], instruction: 'この猫は何をしている？' });
+  await byName.get('genspark-analyze-media').handler(invAttached('What is this cat doing?', [imageBlock()], store));
+  assert.deepEqual(calls[0].toolArgs, { image_urls: ['C:\\tmp\\a.jpg'], instruction: 'What is this cat doing?' });
 });
 
-test('添付ストアが無ければ CLI を起動せず日本語で案内する', async () => {  const { byName, calls } = harness({});
+test('explains the problem without starting the CLI when there is no attachment store', async () => {
+  const { byName, calls } = harness({});
   const result = await byName.get('genspark-analyze-media').handler({
     rawInput: '',
     commandId: 'c3',
@@ -521,11 +522,11 @@ test('添付ストアが無ければ CLI を起動せず日本語で案内する
     agent: { session: { header: { cwd: process.cwd() } } },
   });
   assert.equal(result.kind, 'error');
-  assert.match(result.text, /attachments サービスがありません/);
+  assert.match(result.text, /this profile has no attachments service/);
   assert.equal(calls.length, 0);
 });
 
-test('プラグインの ctx 経由でも添付を解決できる（agent に ctx が無いホスト向け）', async () => {
+test('attachments resolve through the plugin ctx too (for hosts without an agent ctx)', async () => {
   const store = { imageHostPath: () => 'C:\\tmp\\from-ctx.jpg' };
   const ctx = { get: (name) => (name === 'attachments' ? store : undefined) };
   const { byName, calls } = harness({ ctx });
@@ -540,7 +541,7 @@ test('プラグインの ctx 経由でも添付を解決できる（agent に ct
   assert.deepEqual(calls[0].toolArgs.image_urls, ['C:\\tmp\\from-ctx.jpg']);
 });
 
-test('拡張子なしのホストパス（実ストアの画像）は拡張子付きで複製する', async () => {
+test('an extension-less host path (real-store image) is copied with an extension', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'genspark-attach-copy-'));
   const objectsDir = join(dir, 'objects', 'ab');
   mkdirSync(objectsDir, { recursive: true });
@@ -551,13 +552,13 @@ test('拡張子なしのホストパス（実ストアの画像）は拡張子�
   const result = await byName.get('genspark-analyze-media').handler(invAttached('', [imageBlock()], store, dir));
   assert.equal(result.kind, 'success');
   const used = calls[0].toolArgs.image_urls[0];
-  assert.notEqual(used, hostPath, '拡張子の無いパスをそのまま渡している');
+  assert.notEqual(used, hostPath, 'an extension-less path was passed as-is');
   assert.match(used, /\.jpg$/);
   assert.equal(existsSync(used), true);
   assert.equal(readFileSync(used, 'utf8'), 'normalized-jpeg-bytes');
 });
 
-test('ホストパスが取れない添付は readImage のバイト列を genspark-out/attachments へ書き出す', async () => {
+test('an attachment without a host path writes readImage bytes to genspark-out/attachments', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'genspark-attach-'));
   const store = {
     imageHostPath: () => undefined,
@@ -570,12 +571,12 @@ test('ホストパスが取れない添付は readImage のバイト列を gensp
   const written = existsSync(join(dir, 'genspark-out', 'attachments'))
     ? readdirSync(join(dir, 'genspark-out', 'attachments'))
     : [];
-  assert.equal(written.length, 1, '添付の実体が保存されていない');
+  assert.equal(written.length, 1, 'the attachment bytes were not saved');
   assert.match(written[0], /\.jpg$/);
   assert.equal(calls[0].toolArgs.image_urls[0], join(dir, 'genspark-out', 'attachments', written[0]));
 });
 
-test('genspark-image / genspark-video は添付を image_urls に載せる', async () => {
+test('genspark-image / genspark-video put attachments in image_urls', async () => {
   const { byName, calls } = harness({});
   const store = { imageHostPath: () => 'C:\\tmp\\ref.png' };
   await byName.get('genspark-image').handler(invAttached('make it blue', [imageBlock('sha256:i2', 'ref.png')], store));
@@ -590,29 +591,29 @@ test('genspark-image / genspark-video は添付を image_urls に載せる', asy
   assert.equal(calls[1].toolArgs.model, 'kling/v3');
 });
 
-test('genspark-summarize / genspark-crawl は添付ファイルを対象にする', async () => {
+test('genspark-summarize / genspark-crawl target attached files', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'genspark-attach-doc-'));
   const doc = join(dir, 'report.pdf');
   writeFileSync(doc, 'fake-pdf');
   const store = { fileHostPath: () => doc };
   const { byName, calls } = harness({});
-  await byName.get('genspark-summarize').handler(invAttached('要点は？', [fileBlock()], store, dir));
+  await byName.get('genspark-summarize').handler(invAttached('What are the key points?', [fileBlock()], store, dir));
   assert.equal(calls[0].toolName, 'summarize_large_document');
-  assert.deepEqual(calls[0].toolArgs, { url: doc, question: '要点は？' });
+  assert.deepEqual(calls[0].toolArgs, { url: doc, question: 'What are the key points?' });
 
   await byName.get('genspark-crawl').handler(invAttached('', [fileBlock()], store, dir));
   assert.equal(calls[1].toolName, 'crawler');
   assert.deepEqual(calls[1].toolArgs, { url: doc });
 });
 
-test('メディア解析の結果は一覧整形せず分析本文を出す', async () => {
+test('media-analysis results show the analysis body without list formatting', async () => {
   const { byName } = harness({
     runResult: {
       code: 0,
       stdout: JSON.stringify({
         status: 'ok',
         message: 'success',
-        data: { results: [{ url: 'https://www.genspark.ai/api/files/s/x', result: '茶トラ猫がテーブルに座っています。', validate: true }] },
+        data: { results: [{ url: 'https://www.genspark.ai/api/files/s/x', result: 'A brown tabby cat is sitting on the table.', validate: true }] },
       }),
       stderr: '',
       ok: true,
@@ -621,67 +622,68 @@ test('メディア解析の結果は一覧整形せず分析本文を出す', as
   const store = { imageHostPath: () => 'C:\\tmp\\a.jpg' };
   const result = await byName.get('genspark-analyze-media').handler(invAttached('', [imageBlock()], store));
   assert.equal(result.kind, 'success');
-  assert.match(result.text, /茶トラ猫がテーブルに座っています。/);
+  assert.match(result.text, /A brown tabby cat is sitting on the table\./);
   assert.equal(/"validate"/.test(result.text), false);
 });
 
-// ── /genspark（状態表示） ───────────────────────────────────────────────────
+// -- /genspark (status display) ----------------------------------------------
 
-test('genspark は接続状態・アカウント・ツール数・使い方を返す', async () => {
+test('genspark returns connection status, account, tool count, and usage', async () => {
   const { byName, calls } = harness({
     runResult: okData({ email: 'backorz@gmail.com', name: 'mkgm', plan: 'plus', credit_balance: 8521 }),
   });
   const result = await byName.get('genspark').handler(inv(''));
   assert.equal(result.kind, 'success');
-  assert.match(result.text, /CLI エントリ: C:\\fake/);
-  assert.match(result.text, /実行ランタイム: C:\\Program Files\\nodejs\\node.exe（auto）/);
-  assert.match(result.text, /アカウント: backorz@gmail\.com（mkgm） \/ plan plus/);
-  assert.match(result.text, /残クレジット: 8521/);
-  assert.match(result.text, /ツール: 3 件/);
-  assert.match(result.text, /昇格ツール: search=検索・調査 6 ツール \/ media=生成メディア 4 ツール/);
-  assert.match(result.text, /使えるコマンド:/);
-  assert.match(result.text, /\/genspark-image 生成したい画像の説明/);
-  // 引数なしツール（me）は --args-file を付けずに実行される
+  assert.match(result.text, /CLI entry: C:\\fake/);
+  assert.match(result.text, /Runtime: C:\\Program Files\\nodejs\\node.exe \(auto\)/);
+  assert.match(result.text, /Account: backorz@gmail\.com \(mkgm\) \/ plan plus/);
+  assert.match(result.text, /Remaining credits: 8521/);
+  assert.match(result.text, /Tools: 3 items/);
+  assert.match(result.text, /Promoted tools: search=Search & research 6 tools \/ media=Generated media 4 tools/);
+  assert.match(result.text, /Available commands:/);
+  assert.match(result.text, /\/genspark-image Description of the image to generate/);
+  // Tools with no arguments (me) run without --args-file
   assert.deepEqual(calls[0].toolName, 'me');
   assert.deepEqual(calls[0].toolArgs, {});
 });
 
-test('genspark はアカウント取得に失敗しても状態表示を続ける', async () => {
+test('genspark keeps showing status when the account lookup fails', async () => {
   const { byName } = harness({
     runResult: { code: 1, stdout: '', stderr: '[ERROR] not logged in', ok: false },
   });
   const result = await byName.get('genspark').handler(inv(''));
   assert.equal(result.kind, 'success');
-  assert.match(result.text, /アカウント: 取得できませんでした/);
-  assert.match(result.text, /ツール: 3 件/);
+  assert.match(result.text, /Account: could not be retrieved/);
+  assert.match(result.text, /Tools: 3 items/);
 });
 
-// ── コマンド結果のモデルへの引き継ぎ（agent.followup） ──────────────────────
-// ホストコマンドの結果は既定では画面のコマンド欄にしか出ないため、そのままだと AI が内容を
-// 解釈できない。実行後に agent.followup で結果を次のターンへ渡す（設定 commandFollowup）。
+// -- Handing command results to the model (agent.followup) -------------------
+// Host command results only appear in the command area by default, so the AI cannot interpret them.
+// After a run, hand the result to the next turn via agent.followup (the commandFollowup setting).
 
-test('コマンド結果は agent.followup でモデルへ渡される', async () => {
+test('command results are handed to the model through agent.followup', async () => {
   const seen = [];
   const { byName } = harness({});
   const result = await byName
     .get('genspark-search')
-    .handler(inv('東京 天気', process.cwd(), followupAgent(seen)));
+    .handler(inv('Tokyo weather', process.cwd(), followupAgent(seen)));
   await tick();
 
   assert.equal(result.kind, 'success');
   assert.equal(seen.length, 1);
-  // セッション形式 V4 の正準 producer kind（`kind: 'plugin'` は廃止済みで拒否される）
+  // Canonical producer kind in session format V4 (`kind: 'plugin'` is deprecated and rejected)
   assert.deepEqual(seen[0].source, { kind: 'plugin:dsh-genspark' });
   const text = seen[0].content[0].text;
-  assert.match(text, /Genspark のコマンド実行結果です（\/genspark-search 東京 天気）/);
-  assert.match(text, /状態: 成功/);
-  // 結果本文がそのまま入っている（画面のコマンド欄と同じ内容をモデルが読める）
+  assert.match(text, /Genspark command result for \/genspark-search Tokyo weather\./);
+  assert.match(text, /Status: success/);
+  // The result body is included as-is (the model can read the same content as the command area)
   assert.match(text, /echo/);
-  // 同じ内容を繰り返させない指示も入れる
-  assert.match(text, /同じ内容を繰り返さず/);
+  // Also instruct the model not to repeat the same content
+  assert.match(text, /Do not repeat it/);
+  assert.match(text, /Answer in the same language the user is using\./);
 });
 
-test('エラー結果も引き継ぐ（AI が原因を説明できるように）', async () => {
+test('error results are handed off too (so the AI can explain the cause)', async () => {
   const seen = [];
   const { byName } = harness({});
   const result = await byName.get('genspark-search').handler(inv('', process.cwd(), followupAgent(seen)));
@@ -690,30 +692,30 @@ test('エラー結果も引き継ぐ（AI が原因を説明できるように�
   assert.equal(result.kind, 'error');
   assert.equal(seen.length, 1);
   const text = seen[0].content[0].text;
-  assert.match(text, /状態: エラー/);
-  assert.match(text, /入力が必要です/);
+  assert.match(text, /Status: error/);
+  assert.match(text, /Input is required/);
 });
 
-test('commandFollowup: false ならモデルへ渡さない（従来どおり結果はコマンド欄だけ）', async () => {
+test('commandFollowup: false does not hand results to the model (the result stays in the command area as before)', async () => {
   const seen = [];
   const { byName } = harness({ config: { commandFollowup: false } });
   const result = await byName
     .get('genspark-search')
-    .handler(inv('東京 天気', process.cwd(), followupAgent(seen)));
+    .handler(inv('Tokyo weather', process.cwd(), followupAgent(seen)));
   await tick();
 
   assert.equal(result.kind, 'success');
   assert.equal(seen.length, 0);
 });
 
-test('agent が followup を持たないホストでもコマンドは壊れない', async () => {
+test('commands do not break on hosts whose agent has no followup', async () => {
   const { byName } = harness({});
-  // inv の既定 agent は { session: { header: { cwd } } } のみ（followup 無し）
-  const result = await byName.get('genspark-search').handler(inv('東京 天気'));
+  // The default agent for inv is only { session: { header: { cwd } } } (no followup)
+  const result = await byName.get('genspark-search').handler(inv('Tokyo weather'));
   assert.equal(result.kind, 'success');
 });
 
-test('followup が失敗してもコマンド結果は返り、ログに残る', async () => {
+test('the command result is still returned and logged when followup fails', async () => {
   const logs = [];
   const { byName } = harness({ log: (message) => logs.push(message) });
   const agent = {
@@ -722,30 +724,30 @@ test('followup が失敗してもコマンド結果は返り、ログに残る',
       throw new Error('driver gone');
     },
   };
-  const result = await byName.get('genspark-search').handler(inv('東京 天気', process.cwd(), agent));
+  const result = await byName.get('genspark-search').handler(inv('Tokyo weather', process.cwd(), agent));
   await tick();
 
   assert.equal(result.kind, 'success');
   assert.equal(logs.length, 1);
-  assert.match(logs[0], /コマンド結果の引き継ぎに失敗しました（\/genspark-search）: driver gone/);
+  assert.match(logs[0], /failed to hand off the command result \(\/genspark-search\): driver gone/);
 });
 
-// 実機で「コマンドが完了せず、結果も AI の応答も出ない」状態を観測したため、
-// 引き継ぎが返らない/拒否される場合でもコマンドが必ず完結することを固定する。
+// On real hardware we observed a state where "the command never completes and neither the result nor the AI reply appears",
+// so pin that the command always completes even when the follow-up does not return or is rejected.
 
-test('followup が返らない Promise でもコマンド結果はすぐ返る', async () => {
+test('the command result returns immediately even when followup returns a never-settling Promise', async () => {
   const { byName } = harness({});
   const agent = {
     session: { header: { cwd: process.cwd() } },
     followup() {
-      return new Promise(() => {}); // 永久に settle しない
+      return new Promise(() => {}); // never settles
     },
   };
-  const result = await byName.get('genspark-search').handler(inv('東京 天気', process.cwd(), agent));
+  const result = await byName.get('genspark-search').handler(inv('Tokyo weather', process.cwd(), agent));
   assert.equal(result.kind, 'success');
 });
 
-test('followup の Promise が拒否されてもログに残して続行する', async () => {
+test('logs a rejected followup Promise and continues', async () => {
   const logs = [];
   const { byName } = harness({ log: (message) => logs.push(message) });
   const agent = {
@@ -754,22 +756,22 @@ test('followup の Promise が拒否されてもログに残して続行する',
       return Promise.reject(new Error('driver rejected'));
     },
   };
-  const result = await byName.get('genspark-search').handler(inv('東京 天気', process.cwd(), agent));
+  const result = await byName.get('genspark-search').handler(inv('Tokyo weather', process.cwd(), agent));
   await tick();
 
   assert.equal(result.kind, 'success');
   assert.equal(logs.length, 1);
-  assert.match(logs[0], /コマンド結果の引き継ぎに失敗しました（\/genspark-search）: driver rejected/);
+  assert.match(logs[0], /failed to hand off the command result \(\/genspark-search\): driver rejected/);
 });
 
-// ── 長時間かかるコマンドの早期リターン（入力欄の凍結を短くする） ──────────────
-// ホストはコマンドが完了するまで送信トランザクション中（phase = submitting）で、
-// その間コンポーザは編集不可・下書きは保持される
-// （dsh-client-ui-conversation/lib/client.js:17292 の machineBusy と :17295 の editable。
-// 実測では画像生成が 8 秒かかり、その間ずっと入力欄が凍結していた）。
-// commandInlineWaitMs を過ぎたらコマンドを完了させ、結果は引き継ぎでチャットへ届ける。
+// -- Early return for long-running commands (shorten the frozen input field) --
+// The host stays in the sending transaction (phase = submitting) until the command completes,
+// and the composer is not editable and the draft is retained during that time
+// (dsh-client-ui-conversation/lib/client.js:17292 machineBusy and :17295 editable.
+// Measured: image generation took 8 seconds and the input field stayed frozen the whole time).
+// Once commandInlineWaitMs passes, complete the command and deliver the result to chat via the follow-up.
 
-/** 手動で解決できる Promise（長時間かかるコマンドを再現する）。 */
+/** Promise that can be resolved manually (simulates a long-running command). */
 function deferred() {
   let resolve;
   const promise = new Promise((settle) => {
@@ -778,10 +780,10 @@ function deferred() {
   return { promise, resolve };
 }
 
-/** 早期リターン後の背景実行が終わるまで待つ。 */
+/** Wait until the background run after an early return finishes. */
 const settleAll = () => new Promise((resolve) => setTimeout(resolve, 20));
 
-test('既定では長時間かかるコマンドを待たず、結果は引き継ぎで届く', async () => {
+test('by default a long-running command is not awaited and the result arrives through the follow-up', async () => {
   const seen = [];
   const gate = deferred();
   const { byName } = harness({
@@ -793,23 +795,23 @@ test('既定では長時間かかるコマンドを待たず、結果は引き�
   });
   const result = await byName
     .get('genspark-search')
-    .handler(inv('東京 天気', process.cwd(), followupAgent(seen)));
+    .handler(inv('Tokyo weather', process.cwd(), followupAgent(seen)));
 
   assert.equal(result.kind, 'success');
-  assert.match(result.text, /結果はこのあとチャットに届きます/);
-  assert.equal(seen.length, 0); // まだ実行中なので引き継ぎは来ていない
+  assert.match(result.text, /The result will arrive in chat afterwards/);
+  assert.equal(seen.length, 0); // still running, so no follow-up yet
 
   gate.resolve();
   await settleAll();
   assert.equal(seen.length, 1);
   const text = seen[0].content[0].text;
-  assert.match(text, /状態: 成功/);
-  assert.match(text, /slow/); // 結果本文はチャット側に載る
+  assert.match(text, /Status: success/);
+  assert.match(text, /slow/); // the result body arrives in chat
 });
 
-test('引き継ぎメッセージは V4 の user/message 必須項目（id / role / source）を持つ', async () => {
-  // `id` が無いまま永続化されると、次にセッションを開くときに
-  // 「session event at seq N lacks an identified message」で開けなくなる（実機で発生）。
+test('the follow-up message has the V4 user/message required fields (id / role / source)', async () => {
+  // If a message is persisted without `id`, opening the session next time fails with
+  // "session event at seq N lacks an identified message" (observed on real hardware).
   const gate = deferred();
   const seen = [];
   const { byName } = harness({
@@ -819,7 +821,7 @@ test('引き継ぎメッセージは V4 の user/message 必須項目（id / rol
       return okData({ echo: 'slow' });
     },
   });
-  await byName.get('genspark-search').handler(inv('東京 天気', process.cwd(), followupAgent(seen)));
+  await byName.get('genspark-search').handler(inv('Tokyo weather', process.cwd(), followupAgent(seen)));
   gate.resolve();
   await settleAll();
 
@@ -831,7 +833,7 @@ test('引き継ぎメッセージは V4 の user/message 必須項目（id / rol
   assert.ok(Array.isArray(message.content) && message.content.length > 0);
 });
 
-test('引き継ぎのたびに id は変わる（メッセージ識別子を共有しない）', async () => {
+test('the id changes on every follow-up (message identifiers are not shared)', async () => {
   const seen = [];
   const { byName } = harness({ onRun: async () => okData({ echo: 'ok' }) });
   const command = byName.get('genspark-search');
@@ -843,7 +845,7 @@ test('引き継ぎのたびに id は変わる（メッセージ識別子を共�
   assert.notEqual(seen[0].id, seen[1].id);
 });
 
-test('受付メッセージに生成種別ごとの待ち時間の目安が入る', async () => {
+test('the receipt message includes the wait estimate for the generation kind', async () => {
   const gate = deferred();
   const seen = [];
   const { byName } = harness({
@@ -855,18 +857,18 @@ test('受付メッセージに生成種別ごとの待ち時間の目安が入�
   });
   const result = await byName
     .get('genspark-video')
-    .handler(inv('うさぎカフェ', process.cwd(), followupAgent(seen)));
+    .handler(inv('rabbit cafe', process.cwd(), followupAgent(seen)));
 
   assert.equal(result.kind, 'success');
-  assert.match(result.text, /Genspark に送信中です（目安 1〜2 分/);
-  assert.match(result.text, /結果はこのあとチャットに届きます/);
+  assert.match(result.text, /Sending to Genspark \(estimate: 1\u20132 min/);
+  assert.match(result.text, /The result will arrive in chat afterwards/);
 
   gate.resolve();
   await settleAll();
   assert.equal(seen.length, 1);
 });
 
-test('生成コマンドは既定で入力直後に「Genspark に送信中です」を返す', async () => {
+test('generation commands return "Sending to Genspark" right after input by default', async () => {
   const gate = deferred();
   const seen = [];
   const { byName } = harness({
@@ -878,23 +880,23 @@ test('生成コマンドは既定で入力直後に「Genspark に送信中で�
   const started = Date.now();
   const result = await byName
     .get('genspark-video')
-    .handler(inv('うさぎカフェ', process.cwd(), followupAgent(seen)));
+    .handler(inv('rabbit cafe', process.cwd(), followupAgent(seen)));
   const elapsed = Date.now() - started;
 
   assert.equal(result.kind, 'success');
-  assert.match(result.text, /Genspark に送信中です（目安 1〜2 分/);
-  assert.match(result.text, /結果はこのあとチャットに届きます/);
-  assert.ok(elapsed < 1000, `受付メッセージが遅い: ${elapsed}ms`);
-  assert.equal(seen.length, 0); // 結果はまだ来ていない
+  assert.match(result.text, /Sending to Genspark \(estimate: 1\u20132 min/);
+  assert.match(result.text, /The result will arrive in chat afterwards/);
+  assert.ok(elapsed < 1000, `the receipt message is slow: ${elapsed}ms`);
+  assert.equal(seen.length, 0); // the result is not here yet
 
   gate.resolve();
   await settleAll();
   assert.equal(seen.length, 1);
-  assert.match(seen[0].content[0].text, /状態: 成功/);
+  assert.match(seen[0].content[0].text, /Status: success/);
 });
 
-test('commandInlineWaitMs が既定の 2500 でも受付メッセージは 150ms で返る', async () => {
-  // cordis.patch.yml とスキーマ既定は 2500 を明示するため、値に従うと受付が 2.5 秒遅れる（0.1.7 の退行）。
+test('the receipt message still returns in 150ms when commandInlineWaitMs is the default 2500', async () => {
+  // cordis.patch.yml and the schema default both specify 2500, and honoring that value delays the receipt by 2.5 seconds (the 0.1.7 regression).
   const gate = deferred();
   const seen = [];
   const { byName } = harness({
@@ -907,12 +909,12 @@ test('commandInlineWaitMs が既定の 2500 でも受付メッセージは 150ms
   const started = Date.now();
   const result = await byName
     .get('genspark-video')
-    .handler(inv('うさぎカフェ', process.cwd(), followupAgent(seen)));
+    .handler(inv('rabbit cafe', process.cwd(), followupAgent(seen)));
   const elapsed = Date.now() - started;
 
   assert.equal(result.kind, 'success');
-  assert.match(result.text, /Genspark に送信中です/);
-  assert.ok(elapsed < 1000, `受付メッセージが遅い: ${elapsed}ms`);
+  assert.match(result.text, /Sending to Genspark/);
+  assert.ok(elapsed < 1000, `the receipt message is slow: ${elapsed}ms`);
   assert.equal(seen.length, 0);
 
   gate.resolve();
@@ -920,7 +922,7 @@ test('commandInlineWaitMs が既定の 2500 でも受付メッセージは 150ms
   assert.equal(seen.length, 1);
 });
 
-test('commandInlineWaitMs: 0 なら生成コマンドも受付を返さず完了まで待つ', async () => {
+test('with commandInlineWaitMs: 0, generation commands also wait for completion without a receipt', async () => {
   const gate = deferred();
   const seen = [];
   const { byName } = harness({
@@ -932,16 +934,16 @@ test('commandInlineWaitMs: 0 なら生成コマンドも受付を返さず完了
   });
   const pending = byName
     .get('genspark-video')
-    .handler(inv('うさぎカフェ', process.cwd(), followupAgent(seen)));
+    .handler(inv('rabbit cafe', process.cwd(), followupAgent(seen)));
   gate.resolve();
   const result = await pending;
 
   assert.equal(result.kind, 'success');
-  assert.doesNotMatch(result.text, /Genspark に送信中です/);
-  assert.doesNotMatch(result.text, /結果はこのあとチャットに届きます/);
+  assert.doesNotMatch(result.text, /Sending to Genspark/);
+  assert.doesNotMatch(result.text, /The result will arrive in chat afterwards/);
 });
 
-test('新しい会話では受付と同時にターンを起こしてヒーロー画面を解除する', async () => {
+test('in a new conversation, starting a turn on receipt clears the hero screen', async () => {
   const gate = deferred();
   const seen = [];
   const { byName } = harness({
@@ -952,21 +954,21 @@ test('新しい会話では受付と同時にターンを起こしてヒーロ�
   });
   const result = await byName
     .get('genspark-video')
-    .handler(inv('うさぎカフェ', process.cwd(), freshAgent(seen)));
+    .handler(inv('rabbit cafe', process.cwd(), freshAgent(seen)));
 
-  assert.match(result.text, /Genspark に送信中です/);
+  assert.match(result.text, /Sending to Genspark/);
   await tick();
-  assert.equal(seen.length, 1, '受付のターンが 1 回だけ起きる');
-  assert.match(seen[0].content[0].text, /受け付けました/);
-  assert.match(seen[0].content[0].text, /Genspark に送信中です（目安 1〜2 分/);
+  assert.equal(seen.length, 1, 'the receipt turn starts exactly once');
+  assert.match(seen[0].content[0].text, /was accepted/);
+  assert.match(seen[0].content[0].text, /Sending to Genspark \(estimate: 1\u20132 min/);
   assert.deepEqual(seen[0].source, { kind: 'plugin:dsh-genspark' });
 
   gate.resolve();
   await settleAll();
-  assert.equal(seen.length, 2, '結果の引き継ぎが届く');
+  assert.equal(seen.length, 2, 'the result follow-up arrives');
 });
 
-test('既存の会話（turn/start がある）では受付のターンを起こさない', async () => {
+test('an existing conversation (with turn/start) does not start a receipt turn', async () => {
   const gate = deferred();
   const seen = [];
   const { byName } = harness({
@@ -977,18 +979,18 @@ test('既存の会話（turn/start がある）では受付のターンを起こ
   });
   const result = await byName
     .get('genspark-video')
-    .handler(inv('うさぎカフェ', process.cwd(), freshAgent(seen, [{ type: 'turn/start' }])));
+    .handler(inv('rabbit cafe', process.cwd(), freshAgent(seen, [{ type: 'turn/start' }])));
 
-  assert.match(result.text, /Genspark に送信中です/);
+  assert.match(result.text, /Sending to Genspark/);
   await tick();
-  assert.equal(seen.length, 0, 'コマンド欄が見えるので余計なターンは起こさない');
+  assert.equal(seen.length, 0, 'the command area is visible, so no extra turn');
 
   gate.resolve();
   await settleAll();
-  assert.equal(seen.length, 1, '結果の引き継ぎだけ届く');
+  assert.equal(seen.length, 1, 'only the result follow-up arrives');
 });
 
-test('生成が失敗していた場合は status と理由を出してエラーとして返す', async () => {
+test('a failed generation returns an error with the status and reason', async () => {
   const { byName } = harness({
     onRun: async () =>
       okData({
@@ -999,18 +1001,18 @@ test('生成が失敗していた場合は status と理由を出してエラー
   });
   const result = await byName
     .get('genspark-video')
-    .handler(inv('うさぎカフェ', process.cwd(), followupAgent([])));
+    .handler(inv('rabbit cafe', process.cwd(), followupAgent([])));
 
   assert.equal(result.kind, 'error');
-  assert.match(result.text, /ファイルは保存されていません/);
+  assert.match(result.text, /no file was saved/);
   assert.match(result.text, /status: FAILED/);
   assert.match(result.text, /sensitive content detected/);
   assert.match(result.text, /3f036086-ebfc-4173-a7e0-a793649490f4/);
-  assert.match(result.text, /安全ポリシー（センシティブ判定）により拒否されました/);
-  assert.match(result.text, /プロンプトの表現を弱める/);
+  assert.match(result.text, /Rejected by the safety policy/);
+  assert.match(result.text, /soften the prompt wording/);
 });
 
-test('安全ポリシーの拒否理由は英語のままでも日本語の案内を添える', async () => {
+test('safety-policy rejections include guidance even when the reason is in English', async () => {
   const { byName } = harness({
     onRun: async () =>
       okData({
@@ -1026,16 +1028,16 @@ test('安全ポリシーの拒否理由は英語のままでも日本語の案�
   });
   const result = await byName
     .get('genspark-video')
-    .handler(inv('猫カフェ', process.cwd(), followupAgent([])));
+    .handler(inv('cat cafe', process.cwd(), followupAgent([])));
 
   assert.equal(result.kind, 'error');
   assert.match(result.text, /status: FAILURE/);
-  assert.match(result.text, /安全ポリシー/);
-  assert.match(result.text, /別のモデルを試す/);
-  assert.doesNotMatch(result.text, /CLI が生成の完了を待たずに返ったか/);
+  assert.match(result.text, /Rejected by the safety policy/);
+  assert.match(result.text, /try a different model/);
+  assert.doesNotMatch(result.text, /CLI returned without waiting for the generation to finish/);
 });
 
-test('保存できなかった場合は URL を出して成功として返す', async () => {
+test('when saving fails, returns the URL and reports success', async () => {
   const { byName } = harness({
     onRun: async () =>
       okData({
@@ -1044,13 +1046,13 @@ test('保存できなかった場合は URL を出して成功として返す', 
   });
   const result = await byName
     .get('genspark-video')
-    .handler(inv('うさぎカフェ', process.cwd(), followupAgent([])));
+    .handler(inv('rabbit cafe', process.cwd(), followupAgent([])));
 
   assert.equal(result.kind, 'success');
-  assert.match(result.text, /保存できませんでした。URL から取得してください: https:\/\/example\.com\/a\.mp4/);
+  assert.match(result.text, /Could not save the file\. Fetch it from this URL: https:\/\/example\.com\/a\.mp4/);
 });
 
-test('早期リターン後に失敗した実行もエラーとして引き継ぐ', async () => {
+test('a run that fails after an early return is handed off as an error', async () => {
   const seen = [];
   const gate = deferred();
   const { byName } = harness({
@@ -1062,16 +1064,16 @@ test('早期リターン後に失敗した実行もエラーとして引き継�
   });
   const result = await byName
     .get('genspark-search')
-    .handler(inv('東京 天気', process.cwd(), followupAgent(seen)));
-  assert.match(result.text, /結果はこのあとチャットに届きます/);
+    .handler(inv('Tokyo weather', process.cwd(), followupAgent(seen)));
+  assert.match(result.text, /The result will arrive in chat afterwards/);
 
   gate.resolve();
   await settleAll();
   assert.equal(seen.length, 1);
-  assert.match(seen[0].content[0].text, /状態: エラー/);
+  assert.match(seen[0].content[0].text, /Status: error/);
 });
 
-test('commandInlineWaitMs: 0 なら従来どおり完了まで待って結果を返す', async () => {
+test('with commandInlineWaitMs: 0, waits for completion and returns the result as before', async () => {
   const seen = [];
   const gate = deferred();
   const { byName } = harness({
@@ -1081,18 +1083,18 @@ test('commandInlineWaitMs: 0 なら従来どおり完了まで待って結果を
       return okData({ echo: 'slow' });
     },
   });
-  const pending = byName.get('genspark-search').handler(inv('東京 天気', process.cwd(), followupAgent(seen)));
+  const pending = byName.get('genspark-search').handler(inv('Tokyo weather', process.cwd(), followupAgent(seen)));
   gate.resolve();
   const result = await pending;
 
   assert.equal(result.kind, 'success');
-  assert.match(result.text, /slow/); // 結果はコマンド欄に出る
-  assert.doesNotMatch(result.text, /結果はこのあとチャットに届きます/);
+  assert.match(result.text, /slow/); // the result appears in the command area
+  assert.doesNotMatch(result.text, /The result will arrive in chat afterwards/);
   await settleAll();
   assert.equal(seen.length, 1);
 });
 
-test('commandFollowup: false なら早期リターンしない（届ける手段が無いため）', async () => {
+test('commandFollowup: false does not return early (there is no way to deliver the result)', async () => {
   const seen = [];
   const gate = deferred();
   const { byName } = harness({
@@ -1102,7 +1104,7 @@ test('commandFollowup: false なら早期リターンしない（届ける手段
       return okData({ echo: 'slow' });
     },
   });
-  const pending = byName.get('genspark-search').handler(inv('東京 天気', process.cwd(), followupAgent(seen)));
+  const pending = byName.get('genspark-search').handler(inv('Tokyo weather', process.cwd(), followupAgent(seen)));
   gate.resolve();
   const result = await pending;
 
@@ -1110,7 +1112,7 @@ test('commandFollowup: false なら早期リターンしない（届ける手段
   assert.equal(seen.length, 0);
 });
 
-test('agent が followup を持たないホストでも早期リターンしない（結果を失わせない）', async () => {
+test('hosts whose agent has no followup do not return early (so the result is not lost)', async () => {
   const gate = deferred();
   const { byName } = harness({
     config: { commandInlineWaitMs: 20 },
@@ -1119,14 +1121,14 @@ test('agent が followup を持たないホストでも早期リターンしな�
       return okData({ echo: 'slow' });
     },
   });
-  const pending = byName.get('genspark-search').handler(inv('東京 天気'));
+  const pending = byName.get('genspark-search').handler(inv('Tokyo weather'));
   gate.resolve();
   const result = await pending;
 
   assert.match(result.text, /slow/);
 });
 
-test('早期リターン後は呼び出し元の signal を転送しない（背景実行を巻き込まない）', async () => {
+test('after an early return, the caller signal is not forwarded (the background run is not affected)', async () => {
   const seen = [];
   const gate = deferred();
   let captured;
@@ -1139,22 +1141,22 @@ test('早期リターン後は呼び出し元の signal を転送しない（背
     },
   });
   const controller = new AbortController();
-  const invocation = { ...inv('東京 天気', process.cwd(), followupAgent(seen)), signal: controller.signal };
+  const invocation = { ...inv('Tokyo weather', process.cwd(), followupAgent(seen)), signal: controller.signal };
   const result = await byName.get('genspark-search').handler(invocation);
 
-  assert.match(result.text, /結果はこのあとチャットに届きます/);
-  assert.ok(captured, 'runner へ signal が渡る');
-  assert.notEqual(captured, controller.signal); // 転送用の別 signal
-  controller.abort(new Error('rpc settled')); // 早期リターン後に RPC 側が abort しても
-  assert.equal(captured.aborted, false); // 背景の実行は生きたまま
+  assert.match(result.text, /The result will arrive in chat afterwards/);
+  assert.ok(captured, 'a signal is passed to the runner');
+  assert.notEqual(captured, controller.signal); // a separate forwarding signal
+  controller.abort(new Error('rpc settled')); // even if the RPC side aborts after the early return,
+  assert.equal(captured.aborted, false); // the background run stays alive
 
   gate.resolve();
   await settleAll();
   assert.equal(seen.length, 1);
-  assert.match(seen[0].content[0].text, /状態: 成功/);
+  assert.match(seen[0].content[0].text, /Status: success/);
 });
 
-test('待っている間に abort されたら転送する（実行中のキャンセルは効く）', async () => {
+test('an abort while waiting is forwarded (cancellation during the run works)', async () => {
   const seen = [];
   const gate = deferred();
   let captured;
@@ -1167,7 +1169,7 @@ test('待っている間に abort されたら転送する（実行中のキャ�
     },
   });
   const controller = new AbortController();
-  const invocation = { ...inv('東京 天気', process.cwd(), followupAgent(seen)), signal: controller.signal };
+  const invocation = { ...inv('Tokyo weather', process.cwd(), followupAgent(seen)), signal: controller.signal };
   const pending = byName.get('genspark-search').handler(invocation);
   await tick();
   controller.abort(new Error('cancel'));
@@ -1177,23 +1179,23 @@ test('待っている間に abort されたら転送する（実行中のキャ�
   await pending;
 });
 
-// ── 補助関数 ────────────────────────────────────────────────────────────────
+// -- Helper functions --------------------------------------------------------
 
-test('autoSavePath は genspark-out 配下の絶対パスを作る（日本語入力でも壊れない）', () => {
+test('autoSavePath builds an absolute path under genspark-out (does not break on Japanese input)', () => {
   const cwd = mkdtempSync(join(tmpdir(), 'dsh-genspark-cmd-'));
-  const path = autoSavePath(cwd, 'image', '赤い立方体', 'png');
+  const path = autoSavePath(cwd, 'image', '\u8d64\u3044\u7acb\u65b9\u4f53', 'png');
   assert.ok(path.startsWith(join(cwd, 'genspark-out')));
   assert.match(path, /-image\.png$/);
   mkdirSync(join(cwd, 'genspark-out'), { recursive: true });
 });
 
-test('humanizeData は一覧が無ければ null を返す（JSON 表示へフォールバック）', () => {
+test('humanizeData returns null when there is no list (falls back to the JSON view)', () => {
   assert.equal(humanizeData({ email: 'a@example.com', plan: 'plus' }), null);
   assert.equal(humanizeData(undefined), null);
-  assert.match(humanizeData({ images: [{ url: 'https://example.com/i.png' }] }), /images: 1 件/);
+  assert.match(humanizeData({ images: [{ url: 'https://example.com/i.png' }] }), /images: 1 items/);
 });
 
-test('humanizeData はネストした項目（model_info）からタイトルと配列を拾う', () => {
+test('humanizeData picks the title and arrays from nested entries (model_info)', () => {
   const text = humanizeData({
     success: true,
     count: 1,
@@ -1208,20 +1210,20 @@ test('humanizeData はネストした項目（model_info）からタイトルと
       },
     ],
   });
-  assert.match(text, /models: 1 件/);
-  // 直接のキー（model_name）が優先。ネストした name は直接のキーが無いときだけ使う
+  assert.match(text, /models: 1 items/);
+  // The direct key (model_name) wins; the nested name is used only when there is no direct key
   assert.match(text, /1\. kling\/v3/);
   assert.match(text, /capabilities: text_to_video \/ image_to_video/);
   assert.match(text, /strengths: Latest Kling V3 model/);
 });
 
-test('humanizeData は拾える項目が無いときだけ JSON を 1 行で出す', () => {
+test('humanizeData prints one-line JSON only when nothing is pickable', () => {
   const text = humanizeData({ results: [{ unknown_field: 42 }] });
-  assert.match(text, /results: 1 件/);
+  assert.match(text, /results: 1 items/);
   assert.match(text, /\{"unknown_field":42\}/);
 });
 
-/** モデル enum を持つ最小カタログ。 */
+/** Minimal catalog with model enums. */
 const MODEL_TOOLS = [
   { name: 'image_generation', parameters: { properties: { model: { enum: ['nano-banana-2.1', 'gpt-image-2'] } } } },
   { name: 'video_generation', parameters: { properties: { model: { enum: ['kling/v3', 'gemini/veo3.1'] } } } },
@@ -1229,22 +1231,22 @@ const MODEL_TOOLS = [
   { name: 'audio_transcribe', parameters: { properties: { model: { enum: ['whisper-1'] } } } },
 ];
 
-test('/genspark-models はカタログの model enum を種類ごとに並べる', async () => {
+test('/genspark-models lists the catalog model enums by kind', async () => {
   const { byName } = harness({ tools: MODEL_TOOLS });
   const result = await byName.get('genspark-models').handler(inv(''));
   assert.equal(result.kind, 'success');
-  assert.match(result.text, /画像生成 — 2 モデル（\/genspark-image \/ genspark_generate_image）/);
+  assert.match(result.text, /### Image generation \u2014 2 models \(\/genspark-image \/ genspark_generate_image\)/);
   assert.match(result.text, /nano-banana-2\.1 \/ gpt-image-2/);
-  assert.match(result.text, /動画生成 — 2 モデル/);
+  assert.match(result.text, /### Video generation \u2014 2 models/);
   assert.match(result.text, /kling\/v3 \/ gemini\/veo3\.1/);
-  assert.match(result.text, /文字起こし — 1 モデル/);
+  assert.match(result.text, /### Transcription \u2014 1 model/);
 });
 
-test('/genspark-models は日本語の種類指定と id の部分一致で絞れる', async () => {
+test('/genspark-models filters by Japanese kind names and partial id matches', async () => {
   const { byName } = harness({ tools: MODEL_TOOLS });
   const models = byName.get('genspark-models');
 
-  const video = await models.handler(inv('動画'));
+  const video = await models.handler(inv('\u52d5\u753b'));
   assert.match(video.text, /kling\/v3/);
   assert.equal(/nano-banana/.test(video.text), false);
 
@@ -1252,13 +1254,13 @@ test('/genspark-models は日本語の種類指定と id の部分一致で絞�
   assert.match(kling.text, /kling\/v3/);
   assert.equal(/elevenlabs/.test(kling.text), false);
 
-  const missing = await models.handler(inv('存在しないモデル'));
-  assert.match(missing.text, /該当するモデルが見つかりませんでした/);
+  const missing = await models.handler(inv('nonexistent model'));
+  assert.match(missing.text, /No matching models were found/);
 });
 
-test('/genspark-models はカタログ取得の失敗をエラーで返す', async () => {
+test('/genspark-models returns an error when the catalog fails to load', async () => {
   const { byName } = harness({ tools: MODEL_TOOLS, catalogError: new Error('boom') });
   const result = await byName.get('genspark-models').handler(inv(''));
   assert.equal(result.kind, 'error');
-  assert.match(result.text, /モデル一覧を取得できませんでした: boom/);
+  assert.match(result.text, /Could not load the model list: boom/);
 });
