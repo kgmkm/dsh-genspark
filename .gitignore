@@ -1,0 +1,6 @@
+﻿node_modules/
+genspark-out/
+.DS_Store
+Thumbs.db
+*.log
+.env

@@ -1,0 +1,42 @@
+# dsh-genspark — bundle patch layer
+#
+# このファイルがあることで、このパッケージは標準の profile bundle として扱われる:
+#   dsh plugin --profile <p> add dsh-genspark
+# でインストール・マウントでき、cordis.patch.yml を手で編集する必要はない。
+#
+# row id はパッケージ名と一致させる（index.js が export する cordis `name` と同じ）。
+- insert:
+    - id: dsh-genspark
+      name: 'dsh-genspark'
+      config:
+        enabled: true
+        # 副作用のある操作は「未承認なら実行しない」。ユーザーの承認後に
+        # genspark_run へ approve_write: true を付けて実行する。
+        writeMode: approve
+        timeoutMs: 600000
+        maxOutputChars: 100000
+        catalogTtlMs: 900000
+        # 子プロセスのランタイム（node.exe の絶対パス）。空なら自動探索する。
+        # DSH は Electron 上で動くため、探索で見つからない環境でのみ明示指定する。
+        nodePath: ''
+        # 型付きツールとして登録するカテゴリ。
+        #   search … 検索・調査（6 ツール）
+        #   media  … 生成メディア（4 ツール）
+        #   social … ソーシャルメディア（枠のみ・未実装）
+        # 空配列にすると genspark_run / genspark_tools / genspark_status だけになる。
+        promotedCategories:
+          - search
+          - media
+        # コンポーザの `+` メニュー / `/` に Genspark のコマンドを並べる。
+        # コマンド自体はモデルメッセージを作らない（結果はモデル履歴の外に描画される）。
+        # 出すコマンドは promotedCategories に従う（genspark / genspark-tools / genspark-run は常時）。
+        commands: true
+        # 実行結果をエージェントの次のターンへ渡し、AI がチャットで要点と解釈を答えられるようにする。
+        # 画面のコマンド欄に出た内容をそのまま繰り返させないための引き継ぎ（トークンを消費する）。
+        # false にすると従来どおり結果はコマンド欄にだけ出て、モデル履歴は消費しない。
+        commandFollowup: true
+        # コマンドの完了を待つ上限（ミリ秒）。ホストはコマンドが終わるまで入力欄を凍結するため
+        # （phase = submitting / 実測で画像生成が 8 秒）、この時間でコマンドを先に完了させ、
+        # 結果は上の引き継ぎでチャットへ届ける。0 以下にすると従来どおり完了まで待つ。
+        commandInlineWaitMs: 2500
+        debug: false

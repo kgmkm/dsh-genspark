@@ -1,0 +1,73 @@
+{
+  "name": "dsh-genspark",
+  "version": "0.1.0",
+  "description": "Genspark の各種機能（検索・クロール・画像/動画/音声生成・メディア理解・文字起こし・AI Drive・タスクエージェント・コネクタ・SNS・株価・電話 等）を @genspark/cli 経由で DeepSeek Harness から利用するプラグイン。",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "genspark",
+    "gsk",
+    "search",
+    "image-generation",
+    "video-generation",
+    "ai-drive"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.18"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "compatibility": {
+      "dsh": ">=0.2.0-rc.2 <0.3.0",
+      "dshReleases": {
+        "0.2.0-rc.2": "compatible"
+      },
+      "node": ">=20.18",
+      "profiles": [
+        "web",
+        "desktop"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2 <0.3.0"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.4"
+  },
+  "scripts": {
+    "test": "node tests/unit.test.mjs && node tests/runtime.test.mjs && node tests/promoted.test.mjs && node tests/commands.test.mjs",
+    "test:host": "node tests/preflight-host-schema.mjs && node tests/preflight-commands-host.mjs && node tests/preflight-commands-exec.mjs && node tests/preflight-plugin-load.mjs && node tests/preflight-message-source.mjs && node tests/preflight-error-sweep.mjs",
+    "test:host:schema": "node tests/preflight-host-schema.mjs",
+    "test:host:commands": "node tests/preflight-commands-host.mjs",
+    "test:host:exec": "node tests/preflight-commands-exec.mjs",
+    "test:host:exec:cli": "node tests/preflight-commands-exec.mjs --with-cli",
+    "test:host:load": "node tests/preflight-plugin-load.mjs",
+    "test:host:load:cli": "node tests/preflight-plugin-load.mjs --with-cli",
+    "test:host:message-source": "node tests/preflight-message-source.mjs",
+    "test:host:errors": "node tests/preflight-error-sweep.mjs",
+    "test:integration": "node tests/integration.mjs",
+    "test:promoted": "node tests/promoted-integration.mjs",
+    "test:promoted:generation": "node tests/promoted-integration.mjs --with-generation",
+    "test:commands": "node tests/commands-integration.mjs",
+    "test:electron": "node tests/electron-runtime.mjs"
+  }
+}
