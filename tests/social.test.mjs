@@ -7,7 +7,7 @@ import test from 'node:test';
 
 import { describeToolFull, toolInvocation, invocationLabel } from '../lib/catalog.js';
 import { buildGensparkCommands } from '../lib/commands.js';
-import { PROMOTED_TOOLS, buildPromotedTools, promotedSummary } from '../lib/promoted.js';
+import { PROMOTED_TOOLS, buildPromotedTools, promotedSummary, socialRetryArgs } from '../lib/promoted.js';
 import { autoAction, formatSocialResult, normalizeSocialArgs, postUrlOf, socialFailure } from '../lib/social.js';
 
 const EXEC = { agent: { session: { header: { cwd: process.cwd() } } } };
@@ -22,16 +22,24 @@ const followupAgent = (seen) => ({
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-/** 昇格ツールを集める（runner は記録だけ）。 */
-function collect({ categories = ['social'], runResult, calls = [] } = {}) {
+/** 昇格ツールを集める（runner は記録だけ。runResults を渡すと順に返す＝再試行の検証用）。 */
+function collect({ categories = ['social'], runResult, runResults, calls = [] } = {}) {
+  let index = 0;
   return buildPromotedTools({
     defineTool: (spec) => spec,
-    getConfig: () => ({ timeoutMs: 600000, maxOutputChars: 100000, promotedCategories: categories }),
+    getConfig: () => ({
+      timeoutMs: 600000,
+      maxOutputChars: 100000,
+      promotedCategories: categories,
+      // 再試行の待ちを 0 にしてテストを速くする
+      socialRetryDelayMs: 0,
+    }),
     runner: {
       async runTool(toolName, toolArgs, options) {
         calls.push({ toolName, toolArgs, options });
+        const next = runResults ? runResults[index++] : runResult;
         return (
-          runResult ?? {
+          next ?? {
             code: 0,
             stdout: JSON.stringify({ status: 'ok', message: 'success', data: { results: [] } }),
             stderr: '',
@@ -83,12 +91,14 @@ test('describeToolFull: 実行コマンドを併記する（グループ付き�
 
 // ── action の自動判定・引数の正規化 ─────────────────────────────────────────
 
-test('autoAction: @handle はプロフィール、話題は投稿検索へ倒す', () => {
-  assert.equal(autoAction('x', '@elonmusk'), 'get_user');
+test('autoAction: @handle はその人の投稿、話題は投稿検索へ倒す', () => {
+  // get_user は id / 名前しか返らないため auto では選ばない（実測）
+  assert.equal(autoAction('x', '@elonmusk'), 'get_posts_by_author');
+  assert.equal(autoAction('instagram', '@natgeo'), 'get_posts_by_user');
+  assert.equal(autoAction('reddit', '@foo'), 'get_user');
   assert.equal(autoAction('x', 'from:elonmusk'), 'get_posts_by_author');
   assert.equal(autoAction('x', 'Genspark'), 'search_posts');
-  assert.equal(autoAction('instagram', '@natgeo'), 'get_user');
-  assert.equal(autoAction('reddit', '@foo'), 'get_user');
+  assert.equal(autoAction('reddit', 'local llm'), 'search_posts');
   assert.equal(autoAction('x', ''), 'search_posts');
 });
 
@@ -123,10 +133,9 @@ test('formatSocialResult: X の投稿を件数・投稿者・表示回数・URL 
   assert.equal(text.includes('\\n'), false);
 });
 
-test('formatSocialResult: limit で切り、残件数を案内する', () => {
+test('formatSocialResult: limit で切り、サーバー返却件数と表示件数を区別して案内する', () => {
   const text = formatSocialResult(X_DATA, { platform: 'x', action: 'search_posts', query: 'q', limit: 1 });
-  assert.match(text, /100 件|2 件/);
-  assert.match(text, /… 他 1 件（件数を増やすには limit、生データは raw: true）/);
+  assert.match(text, /サーバー返却 2 件中 1 件を表示（残り 1 件。limit で増やす／raw: true で全件の生データ）/);
   assert.equal(text.includes('@bob'), false);
 });
 
@@ -180,8 +189,70 @@ test('formatSocialResult: ユーザー行・プロフィールは @handle 形式
     { result: { id: '44196397', username: 'elonmusk', name: 'Elon Musk', status: 'success' } },
     { platform: 'x', action: 'get_user', query: 'elonmusk' },
   );
-  assert.match(profile, /X（Twitter）のプロフィール/);
+  assert.match(profile, /X（Twitter）のアカウント基本情報/);
   assert.match(profile, /@elonmusk（Elon Musk）/);
+});
+
+test('formatSocialResult: 空結果は生 JSON ではなく定型文を返す', () => {
+  const text = formatSocialResult(
+    { results: [], pagination: { page: 1, total_pages: 0, total_rows: 0 } },
+    { platform: 'reddit', action: 'search_posts', query: 'zzz' },
+  );
+  assert.match(text, /該当する結果はありませんでした（サーバー返却 0 件）/);
+  assert.equal(text.includes('"results"'), false);
+  assert.equal(text.includes('pagination'), false);
+});
+
+test('formatSocialResult: 投稿は新しい順に並べ替える（返却順が時系列でないため）', () => {
+  const text = formatSocialResult(
+    {
+      results: [
+        { id: 'a', text: 'old', author_username: 'u1', created_at_date: '2026-08-23' },
+        { id: 'b', text: 'newest', author_username: 'u2', created_at_date: '2026-10-18' },
+        { id: 'c', text: 'mid', author_username: 'u3', created_at_date: '2026-10-01' },
+      ],
+    },
+    { platform: 'x', action: 'get_posts_by_author', query: 'u2' },
+  );
+  const order = [...text.matchAll(/https:\/\/x\.com\/u\d\/status\/(\w)/g)].map((match) => match[1]);
+  assert.deepEqual(order, ['b', 'c', 'a']);
+});
+
+test('formatSocialResult: Reddit の {result:{post,comments}} をタイトル・URL・コメントに整形する', () => {
+  const text = formatSocialResult(
+    {
+      result: {
+        post: { id: '1x7rkcr', title: 'RAMDeck: pool RAM across old PCs', author_username: 'Medicine_Blogscanner', subreddit_name: 'kickstarter' },
+        comments: [
+          { id: 'c1', body: 'Looks promising', author_username: 'someone', created_at_date: '2026-10-16', score: 12 },
+        ],
+      },
+    },
+    { platform: 'reddit', action: 'get_post_with_comments', limit: 25 },
+  );
+  assert.match(text, /Redditの投稿とコメント: 「RAMDeck: pool RAM across old PCs」/);
+  assert.match(text, /https:\/\/www\.reddit\.com\/r\/kickstarter\/comments\/1x7rkcr/);
+  assert.match(text, /コメント: 1 件/);
+  assert.match(text, /u\/someone · 2026-10-16（\+12） — Looks promising/);
+});
+
+test('formatSocialResult: Reddit の {result:{subreddit,posts}} をサブレディット見出し＋投稿に整形する', () => {
+  const text = formatSocialResult(
+    {
+      result: {
+        subreddit: { id: '81eyvm', display_name: 'LocalLLaMA', subscribers_count: 851787 },
+        posts: [
+          { id: 'p1', title: 'older', author_username: 'a', subreddit_name: 'LocalLLaMA', created_at_date: '2026-10-11' },
+          { id: 'p2', title: 'newer', author_username: 'b', subreddit_name: 'LocalLLaMA', created_at_date: '2026-10-17' },
+        ],
+      },
+    },
+    { platform: 'reddit', action: 'get_subreddit_with_posts' },
+  );
+  assert.match(text, /Redditのサブレディット: r\/LocalLLaMA（購読者 851,787 人）/);
+  assert.match(text, /投稿: 2 件（新しい順）/);
+  const order = [...text.matchAll(/\/comments\/(p\d)/g)].map((match) => match[1]);
+  assert.deepEqual(order, ['p2', 'p1']);
 });
 
 test('formatSocialResult: サーバー側の失敗を日本語で説明する', () => {
@@ -222,14 +293,17 @@ test('build: action 省略時は自動判定し、limit の既定は 25', () => 
   assert.equal(built.render.raw, false);
 });
 
-test('build: @handle は get_user、from:handle は get_posts_by_author になる', () => {
+test('build: @handle はその人の投稿、get_user は明示したときだけ', () => {
   const spec = PROMOTED_TOOLS.find((tool) => tool.name === 'genspark_x_search');
-  const user = spec.build({ query: '@elonmusk' }, process.cwd());
-  assert.equal(user.args.action, 'get_user');
-  assert.equal(user.args.query, 'elonmusk');
-  const author = spec.build({ query: 'from:elonmusk' }, process.cwd());
+  const author = spec.build({ query: '@elonmusk' }, process.cwd());
   assert.equal(author.args.action, 'get_posts_by_author');
   assert.equal(author.args.query, 'elonmusk');
+  const explicitUser = spec.build({ action: 'get_user', query: '@elonmusk' }, process.cwd());
+  assert.equal(explicitUser.args.action, 'get_user');
+  assert.equal(explicitUser.args.query, 'elonmusk');
+  const fromOperator = spec.build({ query: 'from:elonmusk' }, process.cwd());
+  assert.equal(fromOperator.args.action, 'get_posts_by_author');
+  assert.equal(fromOperator.args.query, 'elonmusk');
 });
 
 test('build: 引数の不足・不正は日本語で throw する（CLI を起動しない）', () => {
@@ -250,6 +324,68 @@ test('build: Reddit は sort / time / subreddit を渡す', () => {
   assert.equal(built.args.time, 'week');
   assert.equal(built.args.subreddit, 'LocalLLaMA');
   assert.deepEqual(built.command, ['social', 'reddit']);
+});
+
+test('build: 日付は search_posts にだけ送る（非対応 action では落とす＝実測の失敗回避）', () => {
+  const spec = PROMOTED_TOOLS.find((tool) => tool.name === 'genspark_x_search');
+  const search = spec.build({ query: 'anima', start_date: '2026-10-11', end_date: '2026-10-18' }, process.cwd());
+  assert.equal(search.args.start_date, '2026-10-11');
+  assert.equal(search.args.end_date, '2026-10-18');
+  // @handle は get_posts_by_author（日付非対応）へ倒れるので start_date は落ちる
+  const author = spec.build({ query: '@foo', start_date: '2026-10-11' }, process.cwd());
+  assert.equal(author.args.action, 'get_posts_by_author');
+  assert.equal(author.args.start_date, undefined);
+});
+
+test('socialRetryArgs: 失敗時だけ 1 回ぶんの引数を返す（未対応 action は再試行しない）', () => {
+  const failed = { result: 'Failed to execute Twitter action' };
+  const next = socialRetryArgs({ action: 'search_posts', start_date: 'x', end_date: 'y' }, failed);
+  assert.equal(next.action, 'search_posts');
+  assert.equal(next.start_date, undefined);
+  assert.equal(socialRetryArgs({ action: 'search_posts' }, { results: [] }), null);
+  assert.equal(socialRetryArgs({ action: 'count_posts' }, failed), null);
+  assert.equal(socialRetryArgs({ action: 'search_subreddits' }, failed), null);
+});
+
+test('execute: 一時的な失敗は 1 回だけ自動で再試行する', async () => {
+  const calls = [];
+  const failure = {
+    code: 0,
+    ok: true,
+    stderr: '',
+    stdout: JSON.stringify({ status: 'ok', message: 'success', data: { result: 'Failed to execute Twitter action' } }),
+  };
+  const recovered = {
+    code: 0,
+    ok: true,
+    stderr: '',
+    stdout: JSON.stringify({
+      status: 'ok',
+      message: 'success',
+      data: { results: [{ id: '9', text: 'recovered', author_username: 'carol', created_at_date: '2026-10-18' }] },
+    }),
+  };
+  const tools = collect({ calls, runResults: [failure, recovered] });
+  const text = await tools[0].execute({ query: 'Genspark' }, EXEC);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].options.toolCommand[0], 'social');
+  assert.match(text, /recovered/);
+  assert.equal(/失敗しました/.test(text), false);
+});
+
+test('execute: 再試行しても失敗すれば説明文を返す（2 回で打ち切る）', async () => {
+  const calls = [];
+  const failure = {
+    code: 0,
+    ok: true,
+    stderr: '',
+    stdout: JSON.stringify({ status: 'ok', message: 'success', data: { result: 'Failed to execute Twitter action' } }),
+  };
+  const tools = collect({ calls, runResults: [failure, failure, failure] });
+  const text = await tools[0].execute({ query: 'Genspark' }, EXEC);
+  assert.equal(calls.length, 2);
+  assert.match(text, /失敗しました/);
+  assert.match(text, /自動で 1 回だけ再試行済み/);
 });
 
 test('execute: グループ付きコマンドを渡し、応答を整形して返す', async () => {
@@ -273,6 +409,21 @@ test('execute: グループ付きコマンドを渡し、応答を整形して�
   assert.equal(calls[0].toolName, 'social_twitter');
   assert.match(text, /X（Twitter）の投稿検索/);
   assert.match(text, /https:\/\/x\.com\/alice\/status\/1/);
+});
+
+test('formatSocialResult: language 指定時は lang が一致する行へ絞る（0 件なら絞らない）', () => {
+  const rows = [
+    { id: '1', text: '日本語の投稿', author_username: 'a', lang: 'ja', created_at_date: '2026-10-18' },
+    { id: '2', text: 'italian anima', author_username: 'b', lang: 'it', created_at_date: '2026-10-17' },
+    { id: '3', text: 'no lang field', author_username: 'c', created_at_date: '2026-10-16' },
+  ];
+  const filtered = formatSocialResult({ results: rows }, { platform: 'x', action: 'search_posts', query: 'anima', language: 'ja' });
+  assert.match(filtered, /language="ja" で 2 件中 1 件に絞り込み/);
+  assert.match(filtered, /日本語の投稿/);
+  assert.equal(filtered.includes('italian anima'), false);
+  // 一致 0 件なら元の行を残す（取りこぼし防止）
+  const none = formatSocialResult({ results: rows }, { platform: 'x', action: 'search_posts', query: 'anima', language: 'de' });
+  assert.equal(none.includes('italian anima'), true);
 });
 
 test('execute: raw=true なら整形せず生 JSON を返す', async () => {
@@ -341,6 +492,11 @@ test('/genspark-social は API を呼ばず、AI への振り分け依頼を 1 �
   assert.match(prompt, /genspark_instagram_search/);
   assert.match(prompt, /genspark_reddit_search/);
   assert.match(prompt, /limit の既定は 25 件/);
+  // 実地メモの改善案（検索作法）がプロンプトに入っている
+  assert.match(prompt, /検索語は 1〜2 語に絞る/);
+  assert.match(prompt, /language="ja"/);
+  assert.match(prompt, /同じサービス内で検索語を変えた再試行は 3 回まで/);
+  assert.match(prompt, /コメント取得.*空が多い/);
   assert.equal(seen[0].role, 'user');
   assert.equal(seen[0].source.kind, 'plugin:dsh-genspark');
 });

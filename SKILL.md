@@ -86,16 +86,31 @@
 | `genspark_instagram_search` | `social_instagram`（`gsk social instagram`） | `query`, `action`, `post_id`, `post_ids`, `start_date`, `end_date`, `limit`, `raw` |
 | `genspark_reddit_search` | `social_reddit`（`gsk social reddit`） | `query`, `action`, `subreddit`, `sort`, `time`, `start_date`, `end_date`, `limit`, `raw` |
 
-- `action` を省くと `lib/social.js` の `autoAction()` が判定する（`@handle` → `get_user`、
-  `from:handle` → `get_posts_by_author`、それ以外 → `search_posts`）。ユーザー検索は `search_users`。
+- `action` を省くと `lib/social.js` の `autoAction()` が判定する。`@handle` は**その人の投稿**
+  （X → `get_posts_by_author` / Instagram → `get_posts_by_user` / Reddit → `get_user`）、
+  `from:handle` も同じ、それ以外は `search_posts`。`get_user` は **id / username / name しか返さない**
+  （bio・フォロワー数・URL は無い。実測）ので auto では選ばない。人が知りたいときは `search_users`。
+- **並び順はこちらで日付降順に直す**（`get_posts_by_author` の返却順が時系列でないため。実測）。
+  日付が読めない行は元の順序で末尾へ。`get_comments` / `search_comments` は元の順序を保つ。
 - **サーバーは `limit` を無視して 100〜127 件返す**ため、表示は既定 25 件に切る
   （`limit` で 1〜100、全件・全フィールドが必要なら `raw: true` の JSON）。
+  切り口は「サーバー返却 N 件中 M 件を表示（残り …）」と**何を切ったか**を明示する。
+- 日付（`start_date` / `end_date`）は **`search_posts` にだけ送る**。実測で
+  `get_posts_by_author` + `start_date` は失敗し、外すと成功した。他の action に渡された日付は落とす。
+- **一時的な失敗は 1 回だけ自動で再試行する**（日付を送っていた場合は日付を落として再試行）。
+  実測では同一クエリ・同一引数でも数十秒後に成功した。`count_posts` / Reddit の `search_comments` /
+  `search_subreddits` は上流が未対応なので再試行しない（文言で代替案を出す）。
 - 投稿 URL は生データに無いことがある（X / Reddit）ので id から組み立てる
   （`https://x.com/<user>/status/<id>` / `https://www.reddit.com/r/<sub>/comments/<id>`）。
-- 一部 action は上流 API の制限で失敗する（2026-10-18 実測: `count_posts`、Reddit の
-  `search_comments` / `search_subreddits` が「Failed to execute … action」）。日本語で説明し代替案を添える。
-- 課金は 1 回あたり **約 1.6 クレジット**（実測: 13 回で 20.8）。Instagram の投稿検索は 10〜15 秒。
-- Reddit の検索精度は上流依存で、`query` だけだと無関係なサブレディットが混ざる。`subreddit` で絞るとよい。
+- 空結果は「該当する結果はありませんでした（サーバー返却 0 件）」の定型文にする（生 JSON を出さない）。
+- `get_post_with_comments` / `get_subreddit_with_posts` は `{result:{post,comments}}` /
+  `{result:{subreddit,posts}}` の入れ子で返る（実測）。専用の整形でタイトル・URL・コメント・
+  サブレディット見出しを出す。**コメントは実測でも空が多い**（失敗ではない）。
+- X の `language` を指定すると、行に `lang` がある場合だけ一致する行へ絞る（一致 0 件なら絞らない）。
+- 課金は 1 回あたり **約 1.6 クレジット**（実測: 13 回で 20.8）。Instagram の投稿検索は 10〜15 秒、
+  Reddit の `get_post_with_comments` / `get_subreddit_with_posts` は 40 秒前後かかることがある。
+- Reddit の検索精度は上流依存で、`query` だけだと無関係なサブレディットが混ざる（50 件中 1 件など）。
+  `subreddit` で絞るか 1 語にする。検索結果の行に **score / コメント数は含まれない**。
 
 ### 1.3 メディア解析の振り分け（`genspark_analyze_media`）
 
@@ -229,6 +244,10 @@
   `agent.followup` でモデルへ渡す。モデルが `genspark_x_search` / `genspark_instagram_search` /
   `genspark_reddit_search` を選んで実行する（`agent` が判断して API を割り振る形）。
 - コマンド欄には「X（Twitter）・Instagram・Reddit を AI が選んで検索します:「…」」を返す。
+- プロンプトには**実測に基づく検索作法**を書いてある（0.1.14〜）: 検索語は 1〜2 語／日本語は
+  `language="ja"`／「#タグ」は効かない／Reddit は `subreddit` で絞る／サービスは最大 3 つだが
+  **同一サービス内の言い換え再試行は 3 回まで**／「Failed to execute」は一時障害のこともある／
+  コメントは空が多い。実運用で 1 タスク 29 回呼んだ反省（2026-10-18 の実地メモ）から。
 - `commandFollowup: false` と `agent.followup` が無い環境では振り分けできないため、
   理由と代替（ツールを直接使う）をエラー結果として返す。
 - 入力が空なら使い方だけを返し、引き継ぎは送らない（`promptFor` が `null` を返す）。
@@ -302,6 +321,11 @@
 
 ## 6. 開発
 
+> シェルから `gsk --version` を叩くと **ExecutionPolicy で落ちる**ことがある
+> （`gsk.ps1 cannot be loaded because running scripts is disabled`）。バージョン確認は
+> `node <npm>\@genspark\cli\dist\index.js --version` のように dist を直接起動する。
+> プラグインは `resolveNodeRuntime()` + dist 直接起動なので影響を受けない。
+
 ```powershell
 # 単体テスト（ホスト不要・ネットワーク不要）
 node tests/unit.test.mjs
@@ -350,6 +374,17 @@ $env:ELECTRON_RUN_AS_NODE='1'; & 'D:\deepseek\DeepSeek Harness.exe' tests/electr
 
 ## 変更履歴
 
+- **0.1.14**: ソーシャル検索を実運用のフィードバック（2026-10-18 の実地メモ 2 本）に基づいて直した。
+  - **`get_post_with_comments` / `get_subreddit_with_posts` が空行になっていた**のを修正
+    （`{result:{post,comments}}` / `{result:{subreddit,posts}}` の入れ子を専用整形）。
+  - 投稿を**日付降順に並べ替え**（返却順が時系列でない action がある）。
+  - 失敗時は**日付を落として 1 回だけ自動再試行**（一時的な失敗が実測されたため）。
+    失敗文言も「未対応とは限らない」と分岐。
+  - `start_date` / `end_date` は `search_posts` にだけ送る（`get_posts_by_author` + 日付の失敗を回避）。
+  - `auto` の `@handle` を `get_user` から**その人の投稿**へ変更（`get_user` は id/名前しか返さない）。
+  - 空結果の生 JSON ダンプを定型文に、`limit` の切り口を「サーバー返却 N 件中 M 件」に明示。
+  - `language` 指定時に `lang` 一致の行へ絞る簡易フィルタ。
+  - 振り分けプロンプトに検索作法（1〜2 語 / `language=ja` / `subreddit` / 同一サービス 3 回まで）を追加。
 - **0.1.13**: ソーシャルメディア検索（X / Instagram / Reddit、計 30 API）を追加した。
   - 型付きツール `genspark_x_search` / `genspark_instagram_search` / `genspark_reddit_search`
     （`social` カテゴリ。`action` 省略時は `@handle`→プロフィール／それ以外→投稿検索を自動判定。
