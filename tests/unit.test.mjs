@@ -52,6 +52,52 @@ test('describeRun: 終了コードが異常でもエンベロープが ok なら
   assert.equal(describeRun(result, { tool: '--version' }).ok, true);
 });
 
+test('describeRun: audio_transcribe は full_text が空でも segments を本文として出す（words は出さない）', () => {
+  const data = {
+    'https://www.genspark.ai/api/files/s/YLfVr5A0': {
+      status: 'completed',
+      audio_url: 'https://www.genspark.ai/api/files/s/YLfVr5A0',
+      language: 'japanese',
+      full_text: '',
+      segments: '0.00-5.52: 霊族こそメスの定め! ブラックウィング、バンザーイ!',
+      words: 'w_5d8194af 0.00-0.66: 霊\nw_60036a34 0.66-0.84: 族\nw_7a0c911e 0.84-1.16: こ',
+      entities: null,
+      analysis_result_url: 'https://www.genspark.ai/api/files/s/sYQFNffF',
+      words_url: 'https://www.genspark.ai/api/files/s/PlRrf7Pu',
+    },
+  };
+  const result = { code: 0, stdout: JSON.stringify({ status: 'ok', message: 'success', data }), stderr: '' };
+  const described = describeRun(result, { tool: 'audio_transcribe' });
+  assert.equal(described.ok, true);
+  assert.match(described.text, /霊族こそメスの定め! ブラックウィング、バンザーイ!/);
+  assert.match(described.text, /language: japanese/);
+  assert.match(described.text, /analysis_result_url: https:\/\/www\.genspark\.ai\/api\/files\/s\/sYQFNffF/);
+  assert.equal(/w_5d8194af/.test(described.text), false, 'words（単語別タイムスタンプ）が出ている');
+  assert.equal(/full_text/.test(described.text), false, 'JSON 全体が出ている');
+});
+
+test('describeRun: full_text があれば segments より優先し、segments 配列も読む', () => {
+  const withFullText = {
+    status: 'completed',
+    full_text: '全文のテキスト',
+    segments: '0.00-1.00: 部分',
+  };
+  const first = describeRun({ code: 0, stdout: JSON.stringify({ status: 'ok', data: withFullText }), stderr: '' }, {});
+  assert.match(first.text, /全文のテキスト/);
+  assert.equal(/部分/.test(first.text), false, 'segments が重複して出ている');
+
+  const withArray = {
+    full_text: '',
+    segments: [
+      { start: 0, end: 1.5, text: '最初の文' },
+      { start: 1.5, end: 3, text: '次の文' },
+    ],
+  };
+  const second = describeRun({ code: 0, stdout: JSON.stringify({ status: 'ok', data: withArray }), stderr: '' }, {});
+  assert.match(second.text, /0\.00-1\.50: 最初の文/);
+  assert.match(second.text, /1\.50-3\.00: 次の文/);
+});
+
 test('describeRun: error エンベロープは error_code と指示を含める', () => {
   const result = {
     code: 1,
