@@ -988,6 +988,42 @@ test('既存の会話（turn/start がある）では受付のターンを起こ
   assert.equal(seen.length, 1, '結果の引き継ぎだけ届く');
 });
 
+test('生成が失敗していた場合は status と理由を出してエラーとして返す', async () => {
+  const { byName } = harness({
+    onRun: async () =>
+      okData({
+        generated_videos: [
+          { id: '3f036086-ebfc-4173-a7e0-a793649490f4', status: 'FAILED', failure_reason: 'sensitive content detected' },
+        ],
+      }),
+  });
+  const result = await byName
+    .get('genspark-video')
+    .handler(inv('うさぎカフェ', process.cwd(), followupAgent([])));
+
+  assert.equal(result.kind, 'error');
+  assert.match(result.text, /ファイルは保存されていません/);
+  assert.match(result.text, /status: FAILED/);
+  assert.match(result.text, /sensitive content detected/);
+  assert.match(result.text, /3f036086-ebfc-4173-a7e0-a793649490f4/);
+  assert.match(result.text, /センシティブ判定/);
+});
+
+test('保存できなかった場合は URL を出して成功として返す', async () => {
+  const { byName } = harness({
+    onRun: async () =>
+      okData({
+        generated_videos: [{ id: 'v1', status: 'SUCCESS', video_urls: ['https://example.com/a.mp4'] }],
+      }),
+  });
+  const result = await byName
+    .get('genspark-video')
+    .handler(inv('うさぎカフェ', process.cwd(), followupAgent([])));
+
+  assert.equal(result.kind, 'success');
+  assert.match(result.text, /保存できませんでした。URL から取得してください: https:\/\/example\.com\/a\.mp4/);
+});
+
 test('早期リターン後に失敗した実行もエラーとして引き継ぐ', async () => {
   const seen = [];
   const gate = deferred();
