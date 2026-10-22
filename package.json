@@ -1,6 +1,6 @@
 {
   "name": "dsh-genspark",
-  "version": "0.1.15",
+  "version": "0.2.0",
   "description": "Use Genspark capabilities (web search, crawl, image/video/audio generation, media understanding, transcription, AI Drive, task agents, connectors, social search, stock prices, phone calls) from DeepSeek Harness through @genspark/cli.",
   "type": "module",
   "main": "index.js",
@@ -55,13 +55,14 @@
     "@deepseek-ai/schemastery": "^3.18.4"
   },
   "scripts": {
-    "test": "node tests/unit.test.mjs && node tests/runtime.test.mjs && node tests/promoted.test.mjs && node tests/social.test.mjs && node tests/commands.test.mjs",
-    "test:host": "node tests/preflight-host-schema.mjs && node tests/preflight-commands-host.mjs && node tests/preflight-commands-exec.mjs && node tests/preflight-plugin-load.mjs && node tests/preflight-message-source.mjs && node tests/preflight-error-sweep.mjs",
+    "test": "node tests/unit.test.mjs && node tests/runtime.test.mjs && node tests/promoted.test.mjs && node tests/social.test.mjs && node tests/web-provider.test.mjs && node tests/commands.test.mjs",
+    "test:host": "node tests/preflight-host-schema.mjs && node tests/preflight-commands-host.mjs && node tests/preflight-commands-exec.mjs && node tests/preflight-plugin-load.mjs && node tests/preflight-web-settings.mjs && node tests/preflight-message-source.mjs && node tests/preflight-error-sweep.mjs",
     "test:host:schema": "node tests/preflight-host-schema.mjs",
     "test:host:commands": "node tests/preflight-commands-host.mjs",
     "test:host:exec": "node tests/preflight-commands-exec.mjs",
     "test:host:exec:cli": "node tests/preflight-commands-exec.mjs --with-cli",
     "test:host:load": "node tests/preflight-plugin-load.mjs",
+    "test:host:web": "node tests/preflight-web-settings.mjs",
     "test:host:load:cli": "node tests/preflight-plugin-load.mjs --with-cli",
     "test:host:message-source": "node tests/preflight-message-source.mjs",
     "test:host:errors": "node tests/preflight-error-sweep.mjs",

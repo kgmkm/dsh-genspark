@@ -333,6 +333,29 @@ The model list comes from the `model` argument enum of `gsk ls` (`lib/models.js`
   (avoiding the whole plugin failing to load in non-GUI profiles). Registering a duplicate in the same scope throws,
   so each registration is wrapped in try/catch. Lines with `input: { hint }` show a hint in the input field instead of
   running immediately when picked from the menu. `input.attachments = true` is the declaration for accepting attachments.
+- **Web search provider** (`lib/web-provider.js`, `webSearch.*`):
+  - `ctx.web.registerSearchProvider()` is the documented seam. The two DeepSeek backends
+    (`dsh-web-deepseek-api` → `deepseek-search-api`, `dsh-web-search-deepseek` → `deepseek-official`) are ordinary
+    plugin packages registering through the same call, so this needs no host change.
+  - Registration goes through `ctx.inject(['web'], …)` (optional dependency) and the provider is unregistered by
+    disposing that fiber: `registerSearchProvider` scopes its effect with `this.ctx.effect(...)`, which binds to the
+    **calling** fiber.
+  - `available()` must stay cheap and local (the seam forbids network calls there): enabled **and** the CLI entry exists.
+    A provider that claims availability while the CLI is missing turns into `WEB_PROVIDER_CONFIGURED_UNAVAILABLE`
+    instead of a fallback.
+  - Selection: `web.searchProvider` is the same settings field the official Web search page writes. The handover uses
+    `settings.update('web', { searchProvider: 'genspark' })`; giving it back uses `settings.mutate('web', [{op:'unset',
+    path:['searchProvider']}])`, which falls through to the inherited (base) value — or `update` with the value the user
+    had chosen when one was recorded. Order matters: register → select, and clear → unregister, so no search ever sees a
+    selection with no provider behind it.
+  - **Live settings without a restart**: `webSearch.enabled` / `webSearch.autoSelect` are `.volatile()`. The host then
+    commits the new value into the running config and emits `loader/volatile-update` on the plugin's own fiber instead of
+    remounting it, so `apply` must re-run its sync from that event. (A non-volatile config field would only be applied on
+    reload — and the settings card exists **only** for the volatile fields: `SettingsForms.describe()` skips entries whose
+    `volatileForm()` is empty.)
+  - Payload mapping is defensive (`organic_results` / `results` / `items` / nested `data`, `url|link`, `snippet|description`,
+    date → ISO only if it parses) because the CLI documents the shape only as "titles, snippets, and URLs".
+    Failures go through `describeRun()` so the wording matches `genspark_web_search` (auth hint, timeout, stderr).
 
 ## 6. Development
 
@@ -347,6 +370,7 @@ node tests/unit.test.mjs
 node tests/runtime.test.mjs
 node tests/promoted.test.mjs
 node tests/social.test.mjs
+node tests/web-provider.test.mjs
 node tests/commands.test.mjs
 
 # Verify against the host's real dsh-tools / dsh-commands (preflight before restarting)
@@ -389,6 +413,23 @@ to create entries in `dependencies` and in the lockfile as well (it does not mov
 
 ## Changelog
 
+- **0.2.0**: The built-in `web_search` can now be answered by Genspark (opt-in, **default OFF**).
+  - New module `lib/web-provider.js`: registers a `genspark` search provider through
+    `ctx.web.registerSearchProvider()` (the documented seam the two DeepSeek backends use) and runs
+    one `gsk web_search` per query. No proxy, no extra port, no key to manage.
+  - Settings card: `Settings → Plugins → dsh-genspark → webSearch.enabled` / `webSearch.autoSelect`.
+    These are `.volatile()`, so turning them on takes effect **without restarting DSH**
+    (`loader/volatile-update` → re-sync). They are the only fields the host renders, because a
+    settings entry with no volatile field gets no card at all.
+  - `autoSelect` (default true) writes `web.searchProvider = 'genspark'` — the same settings field the
+    official Web search page writes. Turning the option off hands the selection back: the value the
+    user had explicitly chosen, or the automatic one-provider selection. It never overwrites a
+    selection the user changed afterwards.
+  - `genspark_status` reports a `Web search (web_search):` line, so "did the replacement actually
+    happen" is visible without digging through logs.
+  - Failures are `WEB_PROVIDER_ERROR` / `WEB_ABORTED` with the `genspark_web_search` wording
+    (auth hint, timeout, raw stderr); zero results are an error, not an empty citation list.
+  - `web_fetch` is untouched (`dsh-web-fetch-http` ships with DSH base in both profiles).
 - **0.1.15**: The plugin is now English-first.
   - Every model-facing and user-visible string is English: tool and parameter descriptions,
     command descriptions/hints, follow-up prompts, result headings and labels, error messages,

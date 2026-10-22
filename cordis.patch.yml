@@ -41,4 +41,17 @@
         # delivers the result to chat via the handoff above. Generation and analysis tools prioritize the acknowledgment message and
         # return within 150 ms regardless of this value. Setting it to 0 or less waits for completion as before.
         commandInlineWaitMs: 2500
+        # Replace the built-in web_search with the Genspark backend. OFF by default: nothing is
+        # registered and no setting is touched while it is false.
+        #
+        # These two fields are the plugin's live (volatile) settings, which is what lets you toggle
+        # them from Settings > Plugins > dsh-genspark without restarting DSH:
+        #   enabled    … register a `genspark` search provider on ctx.web
+        #   autoSelect … also point web.searchProvider at it (the same field the official
+        #                "Web search" page writes). false = register only, select it yourself.
+        #
+        # Each search spends Genspark credits and waits for the gsk process to start.
+        webSearch:
+          enabled: false
+          autoSelect: true
         debug: false

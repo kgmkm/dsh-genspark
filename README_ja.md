@@ -168,6 +168,48 @@ desktop アプリ側にも入れる場合は `...\.dsh\profiles\desktop` に対�
 | `commandFollowup` | `true` | コマンド結果を AI に渡して解釈させる |
 | `commandInlineWaitMs` | `2500` | 入力欄を待たせる上限（ミリ秒） |
 | `debug` | `false` | CLI の stderr をログへ出す |
+| `webSearch.enabled` | `false` | 組み込みの `web_search` を DeepSeek ではなく Genspark で答える |
+| `webSearch.autoSelect` | `true` | `web.searchProvider` もプラグイン側へ向ける（false なら登録だけ） |
+
+## `web_search` を置き換える（任意・既定 OFF）
+
+組み込みの `web_search` は DeepSeek の検索 API を使うため、DeepSeek の API キーが無い・
+間違っていると毎回 `DeepSeek API error (HTTP 401)` で失敗します。この設定をオンにすると、
+**同じ `web_search` への問い合わせを、すでに使っている Genspark CLI が答えます**。モデルが呼ぶ
+ツール名も引数も変わりません（変わるのは裏側だけ）。
+
+**既定は OFF です。** オンにするまで何も登録されず、設定値にも触りません。
+
+1. 設定 → プラグイン → **dsh-genspark** → **`webSearch.enabled`** をオン
+2. 以上です。プラグインが id `genspark` の検索プロバイダを登録し、`web.searchProvider` を
+   そこへ向けます。**再起動は不要**（すぐ反映されます）。
+
+元に戻すときは `webSearch.enabled` をオフにします。選択は返却されます（前に明示的に選んで
+いたプロバイダがあればそこへ、無ければ「利用可能な 1 つを自動選択」に戻ります）。
+
+仕組みと、**あえてやらないこと**:
+
+- `ctx.web.registerSearchProvider()` という `@deepseek-ai/dsh-web` の**公開プラグイン API** を
+  使います。DeepSeek の 2 つの検索バックエンドも同じ呼び出しで登録されている普通のプラグイン
+  なので、DSH 本体のファイルは一切書き換えません。
+- `web.searchProvider` は公式の「Web 検索」ページが書いているのと同じ**設定値**です。オフに
+  すると元の値へ戻します。
+- `web_fetch` は影響を受けません。ローカル HTTP 取得プロバイダ（`dsh-web-fetch-http`）は
+  desktop / web の両プロファイル共通の DSH base に入っているため、キー無しで動き続けます。
+
+コストと割り切り:
+
+- 検索 1 回ごとに **Genspark のクレジットを消費**し、`gsk` プロセスの起動待ちが入ります
+  （1 クエリあたり秒単位。ミリ秒ではありません）。
+- 失敗は `WEB_PROVIDER_ERROR` として、`genspark_web_search` ツールと同じ文言（認証の案内・
+  タイムアウト・生の stderr）で返します。「空の結果」として握りつぶしません。
+- 0 件だった場合も、空の引用リストではなくエラーとして返します。
+- オンにしたままプラグインを無効化・削除すると、`web_search` は
+  `WEB_PROVIDER_CONFIGURED_MISSING` を返します。**削除する前にオフにする**か、あとから
+  プロファイルの patch にある `searchProvider` の行を消してください。
+- プラグインに設定を書かせたくない場合は `webSearch.autoSelect` を `false` にして、
+  プロファイルの patch に `web.searchProvider: genspark` を書くか、環境変数
+  `DSH_WEB_SEARCH_PROVIDER=genspark` で選んでください。
 
 ## 困ったとき
 
@@ -187,6 +229,8 @@ desktop アプリ側にも入れる場合は `...\.dsh\profiles\desktop` に対�
 | SNS 検索で「実行に失敗しました」と出る | 上流の一時的な失敗のことがあります（自動で 1 回再試行済み）。少し待って語を変えるか、action を変えてください。`count_posts`・Reddit のコメント検索など一部 action は上流が未対応です |
 | SNS 検索の結果が話題とずれる | 上流の検索精度の問題です。1〜2 語に絞る、X なら「日本語で」と伝えて `language=ja` を付けさせる、Reddit は「r/LocalLLaMA で」のようにサブレディットを指定してください |
 | コメントが 0 件で返る | 上流 API が空を返すことが多いです（失敗ではありません）。深追いせず、投稿検索の結果で判断してください |
+| `webSearch.enabled` をオンにしたのに `web_search` が DeepSeek のまま | `genspark_status` の `Web search (web_search):` 行を見てください。「選択を書けなかった」と出ていれば、そのホストに設定サービスが無い可能性があります。プロファイルの patch に `web.searchProvider: genspark` を直接書いてください |
+| `web_search` が `WEB_PROVIDER_CONFIGURED_MISSING` / `CONFIGURED_UNAVAILABLE` で失敗する | 選択は `genspark` を指したまま、プロバイダが未登録です（プラグインを無効化・削除した）。`webSearch.enabled` をオンに戻すか、`web.searchProvider` を消してください |
 
 ## もっと詳しく
 

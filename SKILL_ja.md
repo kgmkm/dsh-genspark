@@ -318,6 +318,30 @@
   プラグイン全体が読み込まれなくなるのを避ける）。同一スコープで重複すると throw するため 1 件ずつ try/catch。
   `input: { hint }` を付けた行は、メニューから選ぶと即実行せず入力欄にヒントを出す。
   `input.attachments = true` が添付受け取りの宣言。
+- **Web 検索プロバイダ**（`lib/web-provider.js` / `webSearch.*`）:
+  - `ctx.web.registerSearchProvider()` が公開の継ぎ目。DeepSeek の 2 バックエンド
+    （`dsh-web-deepseek-api` → `deepseek-search-api`、`dsh-web-search-deepseek` → `deepseek-official`）も
+    同じ呼び出しで登録している普通のプラグインなので、ホスト側の変更は要らない。
+  - 登録は `ctx.inject(['web'], …)`（任意依存）で行い、解除はその fiber の dispose で行う。
+    `registerSearchProvider` は内部で `this.ctx.effect(...)` を使っており、これは**呼び出し元の fiber** に
+    紐づく（サービス自身の fiber ではない）。
+  - `available()` は安価なローカル判定に限る（継ぎ目がネットワーク呼び出しを禁じている）。
+    「有効 かつ CLI エントリが存在する」だけを返す。CLI が無いのに true を返すと、
+    フォールバックではなく `WEB_PROVIDER_CONFIGURED_UNAVAILABLE` になる。
+  - 選択の受け渡し: `web.searchProvider` は公式の Web 検索ページが書いているのと同じ設定値。
+    奪うときは `settings.update('web', { searchProvider: 'genspark' })`、返すときは
+    `settings.mutate('web', [{op:'unset', path:['searchProvider']}])`（＝継承値に戻る）か、
+    奪う前のユーザー明示値を記録できていればその値で `update`。順序は「登録 → 選択」「解除 → 登録解除」で、
+    選択だけが残ってプロバイダが無い瞬間を作らない。
+  - **再起動なしの設定反映**: `webSearch.enabled` / `webSearch.autoSelect` は `.volatile()`。
+    ホストは新しい値を実行中の config に書き込み、fiber を再マウントせず `loader/volatile-update` を
+    その fiber に emit する。よって `apply` はそのイベントから sync を再実行する必要がある。
+    （非 volatile な項目は再読み込みまで反映されない。さらに**設定カードは volatile な項目にしか
+    作られない** — `SettingsForms.describe()` は `volatileForm()` が空のエントリを飛ばす。）
+  - 応答の写像は防御的に（`organic_results` / `results` / `items` / ネストした `data`、`url|link`、
+    `snippet|description`、日付は ISO に変換できるときだけ）。CLI の仕様は「タイトル・スニペット・URL」までしか
+    明記していないため。失敗は `describeRun()` 経由で `genspark_web_search` と同じ文言（認証案内・
+    タイムアウト・stderr）を返す。
 
 ## 6. 開発
 
@@ -332,6 +356,7 @@ node tests/unit.test.mjs
 node tests/runtime.test.mjs
 node tests/promoted.test.mjs
 node tests/social.test.mjs
+node tests/web-provider.test.mjs
 node tests/commands.test.mjs
 
 # ホスト実物の dsh-tools / dsh-commands で検証（再起動前のプリフライト）
@@ -374,6 +399,20 @@ $env:ELECTRON_RUN_AS_NODE='1'; & 'D:\deepseek\DeepSeek Harness.exe' tests/electr
 
 ## 変更履歴
 
+- **0.2.0**: 組み込みの `web_search` を Genspark で答えられるようにした（任意・**既定 OFF**）。
+  - 新モジュール `lib/web-provider.js`。`ctx.web.registerSearchProvider()`（DeepSeek の 2 バックエンドも
+    使っている公開の継ぎ目）で `genspark` プロバイダを登録し、1 クエリごとに `gsk web_search` を 1 回実行する。
+    プロキシも追加ポートも鍵管理も要らない。
+  - 設定カード: `設定 → プラグイン → dsh-genspark → webSearch.enabled` / `webSearch.autoSelect`。
+    `.volatile()` なので**DSH を再起動せずに**反映される（`loader/volatile-update` → sync 再実行）。
+    この 2 つが設定カードに出る唯一の項目（volatile な項目が無いエントリにはカード自体が作られない）。
+  - `autoSelect`（既定 true）は `web.searchProvider = 'genspark'` を書く。公式の Web 検索ページと同じ設定値。
+    オフにすると選択を返却する（前に明示選択していた値、無ければ自動選択）。こちらが奪った後に
+    ユーザーが変えた値は上書きしない。
+  - `genspark_status` に `Web search (web_search):` 行を追加。「置き換わったかどうか」をログを追わずに確認できる。
+  - 失敗は `WEB_PROVIDER_ERROR` / `WEB_ABORTED` で、`genspark_web_search` と同じ文言（認証案内・
+    タイムアウト・生 stderr）。0 件は空の引用リストではなくエラー。
+  - `web_fetch` は変更なし（`dsh-web-fetch-http` は両プロファイルの DSH base に入っている）。
 - **0.1.14**: ソーシャル検索を実運用のフィードバック（2026-10-18 の実地メモ 2 本）に基づいて直した。
   - **`get_post_with_comments` / `get_subreddit_with_posts` が空行になっていた**のを修正
     （`{result:{post,comments}}` / `{result:{subreddit,posts}}` の入れ子を専用整形）。

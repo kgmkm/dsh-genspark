@@ -179,6 +179,48 @@ settings of your profile.
 | `commandFollowup` | `true` | Hand command results to the AI for interpretation |
 | `commandInlineWaitMs` | `2500` | Upper bound for holding the input field (milliseconds) |
 | `debug` | `false` | Send the CLI's stderr to the log |
+| `webSearch.enabled` | `false` | Answer the built-in `web_search` with Genspark instead of DeepSeek |
+| `webSearch.autoSelect` | `true` | Also point `web.searchProvider` at the plugin (false = register only) |
+
+## Replacing the built-in `web_search` (opt-in)
+
+The built-in `web_search` asks the DeepSeek search API, so it needs a valid DeepSeek API key and
+fails every time when that key is missing or wrong (`DeepSeek API error (HTTP 401)`). With this
+option the same tool is answered by Genspark through the CLI you already use — the model keeps
+calling `web_search`, and only the backend changes.
+
+**Off by default.** Nothing is registered and no setting is touched until you turn it on.
+
+1. Settings → Plugins → **dsh-genspark** → turn on **`webSearch.enabled`**
+2. Nothing else to do: the plugin registers a search provider with id `genspark` and points
+   `web.searchProvider` at it. The change applies immediately (no restart).
+
+To go back, turn `webSearch.enabled` off. The selection is handed back — to the provider you had
+explicitly chosen before, or to the automatic one-provider selection.
+
+How it works, and what it deliberately does **not** do:
+
+- It uses `ctx.web.registerSearchProvider()`, the documented plugin API of `@deepseek-ai/dsh-web`.
+  The two built-in DeepSeek backends are themselves ordinary plugins registering through the same
+  call, so no DSH file is edited.
+- `web.searchProvider` is a normal settings field — the same one the official **Web search** page
+  writes. Turning the option off restores the previous value.
+- `web_fetch` is not affected. The local HTTP fetch provider (`dsh-web-fetch-http`) ships with
+  DSH base in both the desktop and the web profile, so fetching keeps working without any key.
+
+Costs and trade-offs:
+
+- Every search spends **Genspark credits** (the CLI bills per call) and waits for the `gsk` process
+  to start — expect seconds, not milliseconds, per query.
+- Failures are reported as `WEB_PROVIDER_ERROR` with the same wording the `genspark_web_search`
+  tool uses (auth hint, timeout, raw stderr), so an error is never silently an empty result list.
+- A query that returns nothing raises an error rather than an empty citation list.
+- If you uninstall or disable the plugin while the option is still on, `web_search` will report
+  `WEB_PROVIDER_CONFIGURED_MISSING`. Turn the option off **before** removing the plugin, or delete
+  the `searchProvider` line from the profile patch afterwards.
+- Prefer not to have the plugin write a setting? Set `webSearch.autoSelect` to `false`, then select
+  the provider yourself with `web.searchProvider: genspark` in the profile patch or
+  `DSH_WEB_SEARCH_PROVIDER=genspark` in the environment.
 
 ## Troubleshooting
 
@@ -198,6 +240,8 @@ settings of your profile.
 | A social search says "failed to execute" | This can be a transient upstream failure (one automatic retry has already been made). Wait a little and change the wording, or change the action. Some actions, such as `count_posts` and Reddit comment search, are not supported upstream |
 | Social search results are off-topic | This is upstream search quality. Keep queries to 1–2 words, ask for "in Japanese" on X so `language=ja` is added, and name a subreddit on Reddit such as "in r/LocalLLaMA" |
 | Comments come back as 0 items | The upstream API often returns nothing (this is not a failure). Do not dig further; judge from the post search results |
+| `web_search` still hits DeepSeek after turning `webSearch.enabled` on | Check the `Web search (web_search):` line of `genspark_status`. If it says the selection was not written, set `web.searchProvider: genspark` yourself (the settings service may be unavailable on that host) |
+| `web_search` fails with `WEB_PROVIDER_CONFIGURED_MISSING` / `CONFIGURED_UNAVAILABLE` | The selection still points at `genspark` but the provider is not registered (the plugin was disabled or removed). Turn `webSearch.enabled` on again, or clear `web.searchProvider` |
 
 ## Learn more
 

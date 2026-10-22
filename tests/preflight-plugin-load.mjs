@@ -86,13 +86,41 @@ check(
 function makeHost() {
   const tools = [];
   const commands = [];
+  const providers = [];
+  const settingsWrites = [];
+  const settingsUnsets = [];
+  /** Effective `web` settings document (what web.searchProvider currently resolves to). */
+  const selection = {};
+  const listeners = new Map();
   const logs = { info: [], warn: [], error: [], debug: [] };
-  const disposed = { tools: 0, commands: 0, effect: 0 };
+  const disposed = { tools: 0, commands: 0, effect: 0, web: 0 };
   const logger = {};
   for (const level of Object.keys(logs)) logger[level] = (message) => { logs[level].push(String(message)); };
 
   const innerTools = { tools: { register: (tool) => tools.push(tool) }, logger };
   const innerCommands = { commands: { register: (command) => commands.push(command) }, logger };
+
+  const web = {
+    registerSearchProvider: (provider) => {
+      providers.push(provider);
+      return () => {
+        const index = providers.indexOf(provider);
+        if (index >= 0) providers.splice(index, 1);
+      };
+    },
+  };
+
+  const settings = {
+    describe: () => [{ ns: 'web', value: { ...selection }, user: { ...selection }, schema: {}, revision: 0 }],
+    async update(ns, patch) {
+      settingsWrites.push({ ns, patch });
+      Object.assign(selection, patch);
+    },
+    async mutate(ns, ops) {
+      settingsUnsets.push({ ns, ops });
+      for (const op of ops) if (op.op === 'unset') delete selection[op.path[0]];
+    },
+  };
 
   // Keep the teardown registered via ctx.effect so the test can invoke it
   let teardown = () => { disposed.effect += 1; };
@@ -104,8 +132,25 @@ function makeHost() {
       return { dispose: () => { disposed.tools += 1; } };
     },
     inject: (deps, callback) => {
-      if (Array.isArray(deps) && deps.includes('commands')) callback(innerCommands);
-      return { dispose: () => { disposed.commands += 1; } };
+      if (Array.isArray(deps) && deps.includes('commands')) {
+        callback(innerCommands);
+        return { dispose: () => { disposed.commands += 1; } };
+      }
+      if (Array.isArray(deps) && deps.includes('web')) {
+        // Mirror the real shape: the provider's disposer is scoped to the injected fiber.
+        const disposers = [];
+        callback({
+          web: { registerSearchProvider: (provider) => { const dispose = web.registerSearchProvider(provider); disposers.push(dispose); return dispose; } },
+          logger,
+        });
+        return { dispose: () => { disposed.web += 1; while (disposers.length > 0) disposers.pop()(); } };
+      }
+      return { dispose: () => {} };
+    },
+    get: (name) => (name === 'settings' ? settings : undefined),
+    on: (name, callback) => {
+      listeners.set(name, callback);
+      return () => listeners.delete(name);
     },
     effect: (fn) => {
       const returned = fn();
@@ -116,7 +161,23 @@ function makeHost() {
       return teardown;
     },
   };
-  return { ctx, tools, commands, logs, disposed, teardown: () => teardown() };
+  return {
+    ctx,
+    tools,
+    commands,
+    providers,
+    settingsWrites,
+    settingsUnsets,
+    selection,
+    logs,
+    disposed,
+    /** Simulate the host committing a volatile config change (no remount). */
+    emitVolatileUpdate: () => {
+      const listener = listeners.get('loader/volatile-update');
+      if (typeof listener === 'function') listener();
+    },
+    teardown: () => teardown(),
+  };
 }
 
 const host = makeHost();
@@ -193,7 +254,66 @@ mod.apply(teardownHost.ctx, { promotedCategories: ['search', 'media'], commands:
 teardownHost.teardown(); // Invoke the teardown registered via ctx.effect (runs when DSH exits)
 check('teardown unregisters both tools and commands', teardownHost.disposed.tools >= 1 && teardownHost.disposed.commands >= 1, JSON.stringify(teardownHost.disposed));
 
-// --- 6. Optional: run genspark_status once against the real CLI ---------------------
+// --- 6. Web search provider (the opt-in replacement for the built-in web_search) -----
+// The provider is only observable through ctx.web + the settings service, so these checks are what
+// proves the handover actually happens (a silently missing registration would look like "web_search
+// still uses DeepSeek").
+const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
+const baseConfig = { promotedCategories: ['search', 'media'], commands: true };
+// Any existing file works: the plugin only checks that the CLI entry exists.
+const fakeCliEntry = join(pluginDir, 'index.js');
+
+const webOff = makeHost();
+mod.apply(webOff.ctx, { ...baseConfig, cliEntry: fakeCliEntry });
+await settle();
+check(
+  'webSearch defaults to off: no provider registered, no selection written',
+  webOff.providers.length === 0 && webOff.settingsWrites.length === 0,
+  `providers=${webOff.providers.length} writes=${webOff.settingsWrites.length}`,
+);
+
+const webOn = makeHost();
+const liveConfig = { ...baseConfig, cliEntry: fakeCliEntry, webSearch: { enabled: true, autoSelect: true } };
+mod.apply(webOn.ctx, liveConfig);
+await settle();
+check('webSearch.enabled registers the "genspark" provider', webOn.providers.length === 1 && webOn.providers[0].id === 'genspark', JSON.stringify(webOn.providers.map((p) => p.id)));
+check(
+  'webSearch.enabled writes web.searchProvider=genspark',
+  JSON.stringify(webOn.settingsWrites) === JSON.stringify([{ ns: 'web', patch: { searchProvider: 'genspark' } }]),
+  JSON.stringify(webOn.settingsWrites),
+);
+check('the registered provider reports available()', webOn.providers[0]?.available?.() === true);
+
+const webManual = makeHost();
+mod.apply(webManual.ctx, { ...baseConfig, cliEntry: fakeCliEntry, webSearch: { enabled: true, autoSelect: false } });
+await settle();
+check(
+  'autoSelect=false registers the provider without touching the selection',
+  webManual.providers.length === 1 && webManual.settingsWrites.length === 0,
+  `providers=${webManual.providers.length} writes=${webManual.settingsWrites.length}`,
+);
+
+// Toggle off through the same event the host emits for a volatile config change (no remount).
+liveConfig.webSearch.enabled = false;
+webOn.emitVolatileUpdate();
+await settle();
+check('toggling the setting off unregisters the provider', webOn.providers.length === 0, JSON.stringify(webOn.providers.map((p) => p.id)));
+check(
+  'toggling the setting off clears web.searchProvider',
+  JSON.stringify(webOn.settingsUnsets) === JSON.stringify([{ ns: 'web', ops: [{ op: 'unset', path: ['searchProvider'] }] }]),
+  JSON.stringify(webOn.settingsUnsets),
+);
+
+const masterOff = makeHost();
+mod.apply(masterOff.ctx, { ...baseConfig, enabled: false, webSearch: { enabled: true } });
+await settle();
+check(
+  'enabled=false keeps the provider off even when webSearch.enabled is true',
+  masterOff.providers.length === 0 && masterOff.settingsWrites.length === 0,
+  `providers=${masterOff.providers.length} writes=${masterOff.settingsWrites.length}`,
+);
+
+// --- 7. Optional: run genspark_status once against the real CLI ---------------------
 if (withCli) {
   const status = host.tools.find((tool) => tool.name === 'genspark_status');
   try {
