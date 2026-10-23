@@ -413,6 +413,17 @@ to create entries in `dependencies` and in the lockfile as well (it does not mov
 
 ## Changelog
 
+- **0.2.1**: The switch has a real UI. `lib/client.js` is the package's browser half (`dsh.client`,
+  `exports["./client"]`) and contributes a **Genspark** card to the Plugins panel — the same
+  `plugins.item` list the official Web search card uses. 0.2.0 shipped only the Host half, and the
+  Web GUI has no page that renders a third-party plugin schema on its own, so the settings were
+  invisible.
+  - The card writes `webSearch.enabled` / `webSearch.autoSelect` through `ctx.configForms` (the
+    shared settings form service), so a flip applies immediately through `loader/volatile-update`.
+  - It mounts only while the Host serves the `dsh-genspark` settings namespace (`whileServed`), and
+    it never disposes the shared form — the provider owns it.
+  - Tests: `tests/preflight-client-card.mjs` (36 checks) runs the shipped bundle against a fake
+    module loader and React.
 - **0.2.0**: The built-in `web_search` can now be answered by Genspark (opt-in, **default OFF**).
   - New module `lib/web-provider.js`: registers a `genspark` search provider through
     `ctx.web.registerSearchProvider()` (the documented seam the two DeepSeek backends use) and runs

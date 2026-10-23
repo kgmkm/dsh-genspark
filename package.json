@@ -1,75 +1,80 @@
 {
-  "name": "dsh-genspark",
-  "version": "0.2.0",
-  "description": "Use Genspark capabilities (web search, crawl, image/video/audio generation, media understanding, transcription, AI Drive, task agents, connectors, social search, stock prices, phone calls) from DeepSeek Harness through @genspark/cli.",
-  "type": "module",
-  "main": "index.js",
-  "exports": {
-    ".": "./index.js",
-    "./package.json": "./package.json"
-  },
-  "files": [
-    "index.js",
-    "lib",
-    "cordis.patch.yml",
-    "README.md"
-  ],
-  "keywords": [
-    "dsh",
-    "dsh-plugin",
-    "deepseek-harness",
-    "genspark",
-    "gsk",
-    "search",
-    "image-generation",
-    "video-generation",
-    "ai-drive"
-  ],
-  "license": "MIT",
-  "engines": {
-    "node": ">=20.18"
-  },
-  "dsh": {
-    "manifestVersion": 1,
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    },
-    "compatibility": {
-      "dsh": ">=0.2.1-rc.2 <0.3.0",
-      "dshReleases": {
-        "0.2.0-rc.2": "compatible",
-        "0.2.1-rc.2": "compatible"
-      },
-      "node": ">=20.18",
-      "profiles": [
-        "web",
-        "desktop"
-      ]
-    }
-  },
-  "peerDependencies": {
-    "@deepseek-ai/cordis": "*",
-    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2 <0.3.0"
-  },
-  "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.4"
-  },
-  "scripts": {
-    "test": "node tests/unit.test.mjs && node tests/runtime.test.mjs && node tests/promoted.test.mjs && node tests/social.test.mjs && node tests/web-provider.test.mjs && node tests/commands.test.mjs",
-    "test:host": "node tests/preflight-host-schema.mjs && node tests/preflight-commands-host.mjs && node tests/preflight-commands-exec.mjs && node tests/preflight-plugin-load.mjs && node tests/preflight-web-settings.mjs && node tests/preflight-message-source.mjs && node tests/preflight-error-sweep.mjs",
-    "test:host:schema": "node tests/preflight-host-schema.mjs",
-    "test:host:commands": "node tests/preflight-commands-host.mjs",
-    "test:host:exec": "node tests/preflight-commands-exec.mjs",
-    "test:host:exec:cli": "node tests/preflight-commands-exec.mjs --with-cli",
-    "test:host:load": "node tests/preflight-plugin-load.mjs",
-    "test:host:web": "node tests/preflight-web-settings.mjs",
-    "test:host:load:cli": "node tests/preflight-plugin-load.mjs --with-cli",
-    "test:host:message-source": "node tests/preflight-message-source.mjs",
-    "test:host:errors": "node tests/preflight-error-sweep.mjs",
-    "test:integration": "node tests/integration.mjs",
-    "test:promoted": "node tests/promoted-integration.mjs",
-    "test:promoted:generation": "node tests/promoted-integration.mjs --with-generation",
-    "test:commands": "node tests/commands-integration.mjs",
-    "test:electron": "node tests/electron-runtime.mjs"
-  }
+    "name":  "dsh-genspark",
+    "version":  "0.2.1",
+    "description":  "Use Genspark capabilities (web search, crawl, image/video/audio generation, media understanding, transcription, AI Drive, task agents, connectors, social search, stock prices, phone calls) from DeepSeek Harness through @genspark/cli.",
+    "type":  "module",
+    "main":  "index.js",
+    "exports":  {
+                    ".":  "./index.js",
+                    "./client":  "./lib/client.js",
+                    "./package.json":  "./package.json"
+                },
+    "files":  [
+                  "index.js",
+                  "lib",
+                  "cordis.patch.yml",
+                  "README.md"
+              ],
+    "keywords":  [
+                     "dsh",
+                     "dsh-plugin",
+                     "deepseek-harness",
+                     "genspark",
+                     "gsk",
+                     "search",
+                     "image-generation",
+                     "video-generation",
+                     "ai-drive"
+                 ],
+    "license":  "MIT",
+    "engines":  {
+                    "node":  "\u003e=20.18"
+                },
+    "dsh":  {
+                "manifestVersion":  1,
+                "bundle":  {
+                               "patch":  "./cordis.patch.yml"
+                           },
+                "client":  {
+                               "platform":  "web"
+                           },
+                "compatibility":  {
+                                      "dsh":  "\u003e=0.2.1-rc.2 \u003c0.3.0",
+                                      "dshReleases":  {
+                                                          "0.2.0-rc.2":  "compatible",
+                                                          "0.2.1-rc.2":  "compatible"
+                                                      },
+                                      "node":  "\u003e=20.18",
+                                      "profiles":  [
+                                                       "web",
+                                                       "desktop"
+                                                   ]
+                                  }
+            },
+    "peerDependencies":  {
+                             "@deepseek-ai/cordis":  "*",
+                             "@deepseek-ai/dsh-tools":  "\u003e=0.2.0-rc.2 \u003c0.3.0"
+                         },
+    "dependencies":  {
+                         "@deepseek-ai/schemastery":  "^3.18.4"
+                     },
+    "scripts":  {
+                    "test":  "node tests/unit.test.mjs \u0026\u0026 node tests/runtime.test.mjs \u0026\u0026 node tests/promoted.test.mjs \u0026\u0026 node tests/social.test.mjs \u0026\u0026 node tests/web-provider.test.mjs \u0026\u0026 node tests/commands.test.mjs",
+                    "test:host":  "node tests/preflight-host-schema.mjs \u0026\u0026 node tests/preflight-commands-host.mjs \u0026\u0026 node tests/preflight-commands-exec.mjs \u0026\u0026 node tests/preflight-plugin-load.mjs \u0026\u0026 node tests/preflight-web-settings.mjs \u0026\u0026 node tests/preflight-client-card.mjs \u0026\u0026 node tests/preflight-message-source.mjs \u0026\u0026 node tests/preflight-error-sweep.mjs",
+                    "test:host:schema":  "node tests/preflight-host-schema.mjs",
+                    "test:host:commands":  "node tests/preflight-commands-host.mjs",
+                    "test:host:exec":  "node tests/preflight-commands-exec.mjs",
+                    "test:host:exec:cli":  "node tests/preflight-commands-exec.mjs --with-cli",
+                    "test:host:load":  "node tests/preflight-plugin-load.mjs",
+                    "test:host:web":  "node tests/preflight-web-settings.mjs",
+                    "test:host:client":  "node tests/preflight-client-card.mjs",
+                    "test:host:load:cli":  "node tests/preflight-plugin-load.mjs --with-cli",
+                    "test:host:message-source":  "node tests/preflight-message-source.mjs",
+                    "test:host:errors":  "node tests/preflight-error-sweep.mjs",
+                    "test:integration":  "node tests/integration.mjs",
+                    "test:promoted":  "node tests/promoted-integration.mjs",
+                    "test:promoted:generation":  "node tests/promoted-integration.mjs --with-generation",
+                    "test:commands":  "node tests/commands-integration.mjs",
+                    "test:electron":  "node tests/electron-runtime.mjs"
+                }
 }

@@ -191,12 +191,19 @@ calling `web_search`, and only the backend changes.
 
 **Off by default.** Nothing is registered and no setting is touched until you turn it on.
 
-1. Settings → Plugins → **dsh-genspark** → turn on **`webSearch.enabled`**
-2. Nothing else to do: the plugin registers a search provider with id `genspark` and points
-   `web.searchProvider` at it. The change applies immediately (no restart).
+1. Open the **Plugins** panel in the sidebar (the same place the official **Web search** card
+   lives) and find the **Genspark web search** card.
+2. Turn on **Use Genspark for web_search**. Nothing else to do: the plugin registers a search
+   provider with id `genspark` and points `web.searchProvider` at it. The change applies
+   immediately (no restart).
 
-To go back, turn `webSearch.enabled` off. The selection is handed back — to the provider you had
-explicitly chosen before, or to the automatic one-provider selection.
+The card is this package's browser half (`lib/client.js`). It has to be: the Web GUI has no page
+that renders a third-party plugin's schema by itself — a settings card is always a client-side
+contribution. The card appears only while the Host serves this plugin's settings namespace, so a
+profile without the plugin shows no trace of it.
+
+To go back, turn the switch off. The selection is handed back — to the provider you had explicitly
+chosen before, or to the automatic one-provider selection.
 
 How it works, and what it deliberately does **not** do:
 

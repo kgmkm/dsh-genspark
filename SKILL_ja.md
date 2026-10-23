@@ -399,6 +399,16 @@ $env:ELECTRON_RUN_AS_NODE='1'; & 'D:\deepseek\DeepSeek Harness.exe' tests/electr
 
 ## 変更履歴
 
+- **0.2.1**: スイッチに実物の UI を付けた。`lib/client.js` がこのパッケージの**ブラウザ側**
+  （`dsh.client` / `exports["./client"]`）で、**プラグイン**パネルに **Genspark** カードを出す。
+  公式の Web 検索カードと同じ `plugins.item` の並び。0.2.0 はホスト側だけで、Web GUI には
+  サードパーティ製プラグインのスキーマを勝手に画面化する仕組みが無いため設定が見えなかった。
+  - カードは共有の設定フォームサービス `ctx.configForms` 経由で `webSearch.enabled` /
+    `webSearch.autoSelect` を書くので、切り替えは `loader/volatile-update` で即反映される。
+  - カードはホストが `dsh-genspark` の設定名前空間を配信している間だけ出る（`whileServed`）。
+    共有フォームは破棄しない（所有者は設定プロバイダ側）。
+  - テスト: `tests/preflight-client-card.mjs`（36 件）。偽のモジュールローダーと React で
+    出荷物をそのまま動かす。
 - **0.2.0**: 組み込みの `web_search` を Genspark で答えられるようにした（任意・**既定 OFF**）。
   - 新モジュール `lib/web-provider.js`。`ctx.web.registerSearchProvider()`（DeepSeek の 2 バックエンドも
     使っている公開の継ぎ目）で `genspark` プロバイダを登録し、1 クエリごとに `gsk web_search` を 1 回実行する。
