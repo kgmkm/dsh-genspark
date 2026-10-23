@@ -44,8 +44,9 @@
         # Replace the built-in web_search with the Genspark backend. OFF by default: nothing is
         # registered and no setting is touched while it is false.
         #
-        # These two fields are the plugin's live (volatile) settings, which is what lets you toggle
-        # them from Settings > Plugins > dsh-genspark without restarting DSH:
+        # These two fields are the plugin's live (volatile) settings, which is what lets you flip
+        # them from the "Genspark web search" card in the Plugins panel (lib/client.js) without
+        # restarting DSH:
         #   enabled    … register a `genspark` search provider on ctx.web
         #   autoSelect … also point web.searchProvider at it (the same field the official
         #                "Web search" page writes). false = register only, select it yourself.
